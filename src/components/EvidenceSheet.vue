@@ -1,0 +1,14 @@
+<template><BottomSheet :open="open" title="这句话的依据" size="large" @close="$emit('close')"><div class="evidence-panel"><div v-if="claim" class="claim"><AppIcon name="quote" :size="23" /><p>{{ claim }}</p><span>当前观点</span></div><div class="evidence-intro"><AppIcon name="info" :size="16" /><p>餐厅与评价均为演示数据，不代表真实商家或用户。</p></div><article v-for="item in items" :key="item.id" class="evidence-card"><header><span class="kind" :class="item.kind"><AppIcon :name="item.kind === 'review' ? 'quote' : item.kind === 'business' ? 'book' : 'sparkles'" :size="14" />{{ kindLabels[item.kind] }}</span><span v-if="item.mock" class="mock">演示数据</span></header><h3>{{ item.title }}</h3><blockquote>{{ item.text }}</blockquote><footer><span>{{ item.source }}</span><time>{{ item.date }}</time></footer><a v-if="item.url" :href="item.url" target="_blank" rel="noopener noreferrer" class="source-link">查看原始来源<AppIcon name="external" :size="14" /></a></article><div v-if="!items.length" class="empty-state"><AppIcon name="book" :size="30" /><h3>暂无可引用资料</h3><p>没有可靠来源的内容，不作为餐厅事实呈现。</p></div></div></BottomSheet></template>
+<script setup lang="ts">
+import { computed } from 'vue'
+import { evidence } from '@/data/restaurants'
+import AppIcon from './AppIcon.vue'
+import BottomSheet from './BottomSheet.vue'
+const props = defineProps<{ open: boolean; ids: string[]; claim?: string }>()
+defineEmits<{ close: [] }>()
+const items = computed(() => props.ids.map((id) => evidence.find((v) => v.id === id)).filter((item) => !!item))
+const kindLabels = { business: '商家基础资料', review: '用户评价示例', summary: '综合分析 · 演示' }
+</script>
+<style lang="less" scoped>
+.evidence-panel { .claim { padding: 18px; border-radius: 15px; background: #ede3ed; color: #705077; >p { font-size: 14px; line-height: 1.8; margin: 10px 0; } >span { font-size: 10px; color: #9f849c; } } .evidence-intro { display: flex; align-items: flex-start; gap: 7px; padding: 17px 0; color: #a28b6e; >.app-icon { margin-top: 2px; flex: none; } p { font-size: 10px; line-height: 1.8; margin: 0; } } .evidence-card { border: 1px solid var(--line); padding: 17px; border-radius: 16px; margin-bottom: 13px; header { display: flex; align-items: center; justify-content: space-between; .kind { display: flex; gap: 5px; align-items: center; font-size: 10px; color: var(--green); &.review { color: #977044; } &.summary { color: #7a5a9e; } } .mock { color: #a39280; font-size: 9px; } } h3 { font-size: 13px; margin: 15px 0 9px; } blockquote { margin: 0; font-size: 13px; line-height: 1.9; color: #71616b; } footer { display: flex; flex-direction: column; gap: 5px; font-size: 9px; color: #a19080; border-top: 1px dashed var(--line); margin-top: 15px; padding-top: 12px; } .source-link { display: flex; align-items: center; gap: 6px; color: var(--green); font-size: 11px; margin-top: 12px; } } }
+</style>

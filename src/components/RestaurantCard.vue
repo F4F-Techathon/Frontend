@@ -1,0 +1,13 @@
+<template><article class="restaurant-card" :class="{ selected, compact }"><button class="card-main" @click="$emit('open', restaurant.id)"><div class="art"><RestaurantArt :name="restaurant.name" :color="restaurant.color" /></div><div class="info"><div class="name-row"><h3>{{ restaurant.name }}</h3><span v-if="selected" class="selected-label"><AppIcon name="check" :size="12" /> 入围</span></div><p class="meta">{{ restaurant.cuisine }} <span>·</span> {{ restaurant.price ? `¥${restaurant.price}/人` : '价格待确认' }} <span>·</span> {{ store.distance(restaurant.id) }} km</p><p class="tags">{{ restaurant.tags.slice(0, compact ? 1 : 2).join(' · ') }}</p></div><AppIcon name="chevron" :size="17" /></button><button v-if="selectable" class="select-button" :class="{ active: selected }" :aria-label="`${selected ? '取消选择' : '加入辩论'}${restaurant.name}`" :aria-pressed="selected" @click="$emit('toggle', restaurant.id)"><AppIcon :name="selected ? 'check' : 'plus'" :size="18" /></button></article></template>
+<script setup lang="ts">
+import type { Restaurant } from '@/data/types'
+import { useDiningStore } from '@/stores/dining'
+import RestaurantArt from './RestaurantArt.vue'
+import AppIcon from './AppIcon.vue'
+defineProps<{ restaurant: Restaurant; selected?: boolean; selectable?: boolean; compact?: boolean }>()
+defineEmits<{ open: [id: string]; toggle: [id: string] }>()
+const store = useDiningStore()
+</script>
+<style lang="less" scoped>
+.restaurant-card { position: relative; background: var(--paper); border: 1px solid var(--line); border-radius: 18px; transition: border-color .2s; &.selected { border-color: #d4ad5b; background: #fffaf0; } .card-main { display: flex; width: 100%; align-items: center; padding: 12px; gap: 12px; text-align: left; border: 0; background: transparent; color: var(--ink); .art { width: 76px; height: 76px; border-radius: 12px; overflow: hidden; flex: none; } .info { flex: 1; min-width: 0; .name-row { display: flex; align-items: center; gap: 7px; h3 { font-size: 15px; margin: 0; } .selected-label { display: inline-flex; gap: 2px; align-items: center; font-size: 10px; color: #8c6926; white-space: nowrap; } } .meta { font-size: 12px; color: #766970; margin: 6px 0; span { margin: 0 2px; color: #b2a48f; } } .tags { margin: 0; font-size: 12px; color: var(--green); } } } .select-button { position: absolute; bottom: 10px; right: 10px; display: grid; place-items: center; border: 1px solid var(--line); background: var(--cream); width: 32px; height: 32px; border-radius: 50%; &.active { background: var(--gold); border-color: var(--gold); } } &.compact { .card-main { .art { width: 62px; height: 62px; } } } }
+</style>

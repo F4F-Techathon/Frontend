@@ -1,0 +1,13 @@
+<template><BottomSheet :open="open" title="各有主张，放在一起比一比" size="large" @close="$emit('close')"><div class="comparison-panel"><div class="table-scroll"><table><thead><tr><th>今晚的选手</th><th v-for="r in store.selected" :key="r.id"><div class="avatar" :style="{ background: `${r.color}15` }"><CharacterAvatar :character="r.character" :name="r.host" portrait /></div>{{ r.name }}</th></tr></thead><tbody><tr><th>人均</th><td v-for="r in store.selected" :key="r.id">{{ r.price ? `¥${r.price}` : '未知' }}</td></tr><tr><th>直线距离</th><td v-for="r in store.selected" :key="r.id">{{ store.distance(r.id) }} km</td></tr><tr><th>菜系</th><td v-for="r in store.selected" :key="r.id">{{ r.cuisine }}</td></tr><tr><th>环境</th><td v-for="r in store.selected" :key="r.id">{{ r.quiet === true ? '适合慢聊' : r.quiet === false ? '更有烟火气' : '未知' }}</td></tr><tr><th>口味</th><td v-for="r in store.selected" :key="r.id">{{ r.spice === 0 ? '不辣' : r.spice ? '偏辣' : '未知' }}</td></tr><tr><th>当前硬条件</th><td v-for="r in store.selected" :key="r.id" :class="matchesFilters(r, store.filters) ? 'yes' : 'no'">{{ matchesFilters(r, store.filters) ? '符合' : '不符合' }}</td></tr></tbody></table></div><div class="comparison-notes"><h3>选择前，再记住这一点</h3><p v-for="r in store.selected" :key="r.id"><b>{{ r.name }}</b>{{ r.caveat }}</p></div><div class="notice"><AppIcon name="info" :size="14" />以下为演示资料，实际信息请向商家确认。</div></div></BottomSheet></template>
+<script setup lang="ts">
+import { useDiningStore } from '@/stores/dining'
+import { matchesFilters } from '@/lib/filtering'
+import BottomSheet from './BottomSheet.vue'
+import CharacterAvatar from './CharacterAvatar.vue'
+import AppIcon from './AppIcon.vue'
+defineProps<{ open: boolean }>(); defineEmits<{ close: [] }>()
+const store = useDiningStore()
+</script>
+<style lang="less" scoped>
+.comparison-panel { .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 15px; margin-top: 20px; table { border-collapse: collapse; width: 100%; min-width: 325px; font-size: 11px; th, td { padding: 15px 7px; border-bottom: 1px solid var(--line); text-align: center; } thead { background: #f0e7d8; th { font-size: 11px; min-width: 80px; &:first-child { min-width: 68px; font-weight: 400; color: var(--muted); } .avatar { width: 48px; height: 48px; border-radius: 50%; margin: 0 auto 9px; } } } tbody { th { text-align: left; font-weight: 400; color: var(--muted); font-size: 10px; } tr:last-child { th, td { border: 0; } } .yes { color: var(--green); } .no { color: var(--red); } } } } .comparison-notes { margin-top: 26px; h3 { font-size: 14px; } p { font-size: 11px; line-height: 1.8; color: var(--muted); b { font-size: 12px; display: block; color: var(--ink); margin-bottom: 5px; } } } .notice { margin-top: 20px; } }
+</style>

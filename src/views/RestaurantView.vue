@@ -16,7 +16,7 @@ const reviews = computed(() => evidence.filter((e) => e.restaurantId === restaur
 const reasons = computed(() => restaurant.value ? restaurantHighlights(restaurant.value, store.filters) : [])
 const evidenceOpen = ref(false), evidenceIds = ref<string[]>([]), claim = ref('')
 const mapUrl = computed(() => restaurant.value ? `https://uri.amap.com/marker?position=${restaurant.value.coordinates.join(',')}&name=${encodeURIComponent(restaurant.value.name + '（演示位置）')}&coordinate=gaode&callnative=0` : '#')
-function showEvidence(ids: string[], text: string) { evidenceIds.value = ids; claim.value = text; evidenceOpen.value = true }
+function showEvidence(ids: string[], text = '') { evidenceIds.value = ids; claim.value = text; evidenceOpen.value = true }
 function goBack() { if (window.history.state?.back) router.back(); else router.push(store.rawInput ? '/pick' : '/') }
 watch(restaurant, (value) => { if (!value) { store.notify('没有找到这家餐厅，回去再挑挑吧'); router.replace(store.rawInput ? '/pick' : '/') } }, { immediate: true })
 </script>

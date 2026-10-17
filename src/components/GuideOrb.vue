@@ -1,5 +1,5 @@
 <template>
-  <div class="guide-orb" :class="{ listening, small }" aria-hidden="true">
+  <div class="guide-orb" :class="{ listening, thinking, small }" aria-hidden="true">
     <div class="ring"></div>
     <div class="orb-float">
       <div class="orb">
@@ -26,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{ listening?: boolean; small?: boolean }>()
+defineProps<{ listening?: boolean; thinking?: boolean; small?: boolean }>()
 </script>
 
 <style lang="less" scoped>
@@ -141,6 +141,20 @@ defineProps<{ listening?: boolean; small?: boolean }>()
     }
   }
 
+  &.thinking {
+    .ring { animation: orb-thinking-ring 2.8s ease-in-out infinite; }
+    .orb-float .orb {
+      transform: rotate(6deg);
+      .face .expression {
+        animation: none;
+        transform: rotate(3deg);
+        .brows { animation: none; transform: translateY(-2px); }
+        .gaze { animation: none; transform: translate(2px, -4px); }
+        .smile { animation: none; transform: scale(.7, .5); }
+      }
+    }
+  }
+
   &.small {
     width: 46px;
     height: 46px;
@@ -163,5 +177,6 @@ defineProps<{ listening?: boolean; small?: boolean }>()
   @keyframes orb-listening-expression { 0%, 100% { transform: translateY(-1px) rotate(-4deg); } 50% { transform: translateY(1px) rotate(-1deg); } }
   @keyframes orb-listening-mouth { 0%, 100% { transform: scale(.9, 1); } 50% { transform: scale(1.05, .8); } }
   @keyframes orb-small-float { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-2px) rotate(3deg); } }
+  @keyframes orb-thinking-ring { 0%, 100% { transform: scale(1.04); opacity: .3; } 50% { transform: scale(1.17); opacity: .7; } }
 }
 </style>

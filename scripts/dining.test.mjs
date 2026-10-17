@@ -119,6 +119,22 @@ test('discussion dictation stays continuous and leaving aborts without completin
   assert.deepEqual(completed, [])
 })
 
+test('canceling stage speech discards late words and allows a new conversation turn', (t) => {
+  const { speech, instances, completed } = mountSpeech(t)
+  speech.start()
+  const first = instances[0], lateEnd = first.onend
+  first.result('这一句已取消', true)
+  speech.cancel()
+  lateEnd()
+  assert.equal(speech.listening.value, false)
+  assert(first.aborted)
+  assert.deepEqual(completed, [])
+  speech.start()
+  instances[1].result('新的想法', true)
+  instances[1].end()
+  assert.deepEqual(completed, ['新的想法'])
+})
+
 test('unsupported speech recognition gives a retryable message without starting a session', (t) => {
   const { speech, instances, completed } = mountSpeech(t, {}, false)
   speech.start()
@@ -227,7 +243,7 @@ test('hard requirements exclude missing facts while soft preferences keep altern
   assert.equal(matchesFilters(restaurants.find((r) => r.price === null), { ...filters, maxBudget: 200 }), false)
   assert.equal(matchesFilters(restaurants[0], { ...filters, quiet: true }), true)
   assert.equal(matchesFilters(restaurants[0], { ...filters, noSpice: true }), false)
-  assert.equal(matchesFilters(restaurants.find((r) => r.allergens === null), { ...filters, allergy: '花生' }), false)
+  assert.equal(matchesFilters(restaurants.find((r) => r.allergens === null), { ...filters, allergies: ['花生'] }), false)
   const parsed = parseRequirements('两个人约会，人均200以内，想安静一点', filters)
   assert.equal(parsed.people, 2)
   assert.equal(parsed.maxBudget, 200)
@@ -441,7 +457,7 @@ test('condition edits reconcile invitations without silent replacements and all 
   assert.equal(store.swipeCandidates.length, 0)
   store.filters.maxBudget = 200
   store.filters.noSpice = true
-  store.filters.allergy = '花生'
+  store.filters.allergies = ['花生']
   store.reconcileSelection()
   assert.equal(store.selected.length, 0)
   assert(store.swipeCandidates.every((restaurant) => matchesFilters(restaurant, store.filters)))

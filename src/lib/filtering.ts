@@ -15,14 +15,16 @@ export function matchesFilters(r: Restaurant, f: Filters) {
   if (f.minBudget && r.price! < f.minBudget) return false
   if (f.radius && distanceKm(f.center, r.coordinates) > f.radius) return false
   if (f.cuisines.length && !f.cuisines.includes(r.cuisine)) return false
+  if (f.excludedCuisines.includes(r.cuisine)) return false
   if (f.noSpice && r.spice !== 0) return false
-  if (f.allergy && (!r.allergens || r.allergens.includes(f.allergy))) return false
+  if (f.allergies.length && (!r.allergens || f.allergies.some((item) => r.allergens!.includes(item)))) return false
+  if (f.avoidedIngredients.length && (!r.ingredients || f.avoidedIngredients.some((item) => r.ingredients!.includes(item)))) return false
   return true
 }
 
 // Extracts explicit requirements locally until a real agent service is connected.
 export function parseRequirements(text: string, previous: Filters): Filters {
-  const f = { ...previous, cuisines: [...previous.cuisines], center: [...previous.center] as Coordinates }
+  const f = { ...previous, cuisines: [...previous.cuisines], allergies: [...previous.allergies], center: [...previous.center] as Coordinates }
   const budget = text.match(/(?:人均|预算|不超过|不能超过|最多|以内|不到)\s*[¥￥]?\s*(\d+)/) || text.match(/(\d+)\s*(?:元|块|以内)/)
   if (budget) f.maxBudget = Number(budget[1])
   const distance = text.match(/(\d+(?:\.\d+)?)\s*(?:公里|km)/i)
@@ -38,7 +40,7 @@ export function parseRequirements(text: string, previous: Filters): Filters {
   if (/安静/.test(text)) f.quiet = true
   if (/少辣|不太辣|清淡|不想吃太辣/.test(text)) f.mild = true
   if (/不能吃辣|不吃辣|不要辣/.test(text)) { f.noSpice = true; f.mild = true }
-  if (/花生过敏/.test(text)) f.allergy = '花生'
-  if (/虾过敏|海鲜过敏/.test(text)) f.allergy = '虾'
+  if (/花生过敏/.test(text) && !f.allergies.includes('花生')) f.allergies.push('花生')
+  if (/虾过敏|海鲜过敏/.test(text) && !f.allergies.includes('虾')) f.allergies.push('虾')
   return f
 }

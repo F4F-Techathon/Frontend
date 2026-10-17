@@ -13,21 +13,12 @@
         <article v-for="entry in filteredHistory" :key="entry.id" class="history-entry" :class="{ user: entry.user }">
           <header><b>{{ entry.speaker }}</b><time>{{ formatTime(entry.time) }}</time><span>{{ entry.user ? '补充需求' : `第 ${entry.round} 轮` }}</span></header>
           <p>{{ entry.text }}</p>
-          <EvidenceDisclosure v-if="entry.evidenceIds.length" :ids="entry.evidenceIds" label="查看当时的依据" />
+          <EvidencePanel v-if="entry.evidenceIds.length" :items="getEvidence(entry.evidenceIds)" />
         </article>
       </template>
       <template v-else-if="sheet === 'conditions'">
         <FilterFields />
         <button class="btn btn-primary" @click="closeSheet(); store.notify('条件已更新，继续讨论时会使用新条件')">保存当前条件<AppIcon name="check" :size="18" /></button>
-      </template>
-      <template v-else-if="sheet === 'input'">
-        <div class="input-intro"><GuideOrb small :listening="speech.listening.value" /><b>{{ speech.listening.value ? '正在听你说…' : '说说你的新想法' }}</b></div>
-        <textarea ref="inputEl" v-model="interruption" rows="4" maxlength="300" aria-label="补充用餐需求" placeholder="比如：我不想吃太辣，最好再安静一点…"></textarea>
-        <p v-if="speech.error.value" class="input-error">{{ speech.error.value }}</p>
-        <div class="input-actions">
-          <button class="icon-btn" :class="{ recording: speech.listening.value }" :aria-label="speech.listening.value ? '结束录音' : '开始录音'" @click="speech.start"><AppIcon :name="speech.listening.value ? 'pause' : 'mic'" /></button>
-          <button class="btn btn-primary" :disabled="!interruption.trim()" @click="submitInterruption">更新条件，继续聊<AppIcon name="send" :size="18" /></button>
-        </div>
       </template>
       <div v-else-if="sheet === 'decision'" class="decision-options" role="group" aria-label="选择今晚的饭店">
         <button v-for="restaurant in store.decisionCandidates" :key="restaurant.id" class="restaurant-choice"
@@ -50,14 +41,10 @@
           <span class="menu-icon"><AppIcon name="filter" :size="22" /></span>
           <span>调整用餐条件</span><AppIcon class="menu-arrow" name="chevron" :size="16" />
         </button>
-        <button class="menu-item restaurants" @click="sheet = 'exit'">
+        <button class="menu-item restaurants" @click="closeSheet(); router.push('/pick')">
           <span class="menu-icon"><AppIcon name="map" :size="22" /></span>
           <span>换换心动的饭店</span><AppIcon class="menu-arrow" name="chevron" :size="16" />
         </button>
-      </div>
-      <div v-else-if="sheet === 'exit'" class="exit-actions">
-        <button class="btn btn-primary" @click="router.push('/pick')">回去挑选<AppIcon name="map" :size="19" /></button>
-        <button class="btn btn-secondary" @click="closeSheet">留在这场讨论</button>
       </div>
       <template v-else-if="sheet === 'no-match'">
         <div class="empty-state">
@@ -74,28 +61,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDiningStore } from '@/stores/dining'
-import { useSpeechInput } from '@/composables/useSpeechInput'
+import { getEvidence } from '@/data/restaurants'
 import AppIcon from './AppIcon.vue'
 import BottomSheet from './BottomSheet.vue'
-import EvidenceDisclosure from './EvidenceDisclosure.vue'
+import EvidencePanel from './EvidencePanel.vue'
 import FilterFields from './FilterFields.vue'
-import GuideOrb from './GuideOrb.vue'
 
 const sheet = defineModel<string>({ required: true })
-const emit = defineEmits<{ intervene: [] }>()
 const store = useDiningStore(), router = useRouter()
-const historyRole = ref(''), interruption = ref(''), inputEl = ref<HTMLTextAreaElement>()
+const historyRole = ref('')
 const choiceId = ref('')
 const choice = computed(() => store.decisionCandidates.find((restaurant) => restaurant.id === choiceId.value))
-const speech = useSpeechInput((text) => { interruption.value = text })
 const filteredHistory = computed(() => store.history.filter((entry) => !historyRole.value || (historyRole.value === 'user' ? entry.user : entry.restaurantId === historyRole.value)))
-const sheetTitles: Record<string, string> = { history: '这场饭局，聊到了这里', conditions: '今晚的用餐条件', input: '我也说两句', decision: '今晚，选哪一家？', more: '这场讨论，你说了算', exit: '换换心动的饭店？', 'no-match': '再找一位合适的选手' }
+const sheetTitles: Record<string, string> = { history: '这场饭局，聊到了这里', conditions: '今晚的用餐条件', decision: '今晚，选哪一家？', more: '这场讨论，你说了算', 'no-match': '再找一位合适的选手' }
 watch(sheet, (value) => { if (value === 'decision') choiceId.value = '' })
 
-function closeSheet() { speech.stop(); sheet.value = '' }
+function closeSheet() { sheet.value = '' }
 
 // Only an explicit selection can create a result; reopening the sheet starts without a default.
 function confirmDecision() {
@@ -104,28 +88,7 @@ function confirmDecision() {
   void router.push('/result')
 }
 
-// The same input sheet supports dictation and focusing the keyboard after it mounts.
-async function startInput(voice: boolean) {
-  store.paused = true
-  sheet.value = 'input'
-  interruption.value = ''
-  await nextTick()
-  if (voice) speech.start()
-  else inputEl.value?.focus()
-}
-
-// Preserve recorded discussion and continue with messages based on the new requirements.
-function submitInterruption() {
-  if (!interruption.value.trim()) return
-  speech.stop()
-  store.intervene(interruption.value.trim())
-  sheet.value = ''
-  if (store.messageIndex < store.messages.length - 1) store.messageIndex++
-  emit('intervene')
-}
-
 function formatTime(time: string) { return new Date(time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) }
-defineExpose({ startInput })
 </script>
 
 <style lang="less" scoped>
@@ -148,33 +111,6 @@ defineExpose({ startInput })
       >span { margin-left: auto; color: #9f8a70; font-size: var(--small-size); }
     }
     p { font-size: var(--body-size); line-height: var(--line-body); }
-  }
-
-  .input-intro {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 10px 0 22px;
-    .guide-orb { margin: 0; flex: none; }
-    b { font-size: var(--body-size); }
-  }
-  textarea {
-    width: 100%;
-    resize: none;
-    background: var(--cream);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 15px;
-    font-size: var(--input-size);
-    line-height: var(--line-body);
-  }
-  .input-error { color: var(--red); font-size: var(--small-size); line-height: var(--line-body); }
-  .input-actions {
-    margin-top: 20px;
-    display: flex;
-    gap: 12px;
-    .icon-btn { background: #eee2ed; width: 52px; height: 52px; flex: none; color: #7a5a9e; &.recording { background: var(--red); color: white; } }
-    .btn { flex: 1; min-width: 0; }
   }
 
   .discussion-menu {
@@ -239,11 +175,5 @@ defineExpose({ startInput })
     }
   }
 
-  .exit-actions {
-    display: grid;
-    gap: 12px;
-    padding-top: 6px;
-    .btn { margin: 0; }
-  }
 }
 </style>

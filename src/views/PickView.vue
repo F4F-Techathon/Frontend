@@ -7,25 +7,30 @@
     </div>
     <div class="picker-header">
       <NavHeader title="饭店候场" @back="router.push('/input')">
-        <div class="picker-tools">
-          <button class="icon-btn filter-button" aria-label="调整口味和范围" :disabled="deck?.busy || entrance.active" @click="filterOpen = true"><AppIcon name="filter" :size="20" /></button>
-          <button v-if="store.canStartDebate" class="start-button" :disabled="deck?.busy || entrance.active" @click="start">开场<AppIcon name="ticket" :size="16" /></button>
-        </div>
+        <button class="icon-btn filter-button" aria-label="调整口味和范围" :disabled="deck?.busy || clapping || entrance.active" @click="filterOpen = true"><AppIcon name="filter" :size="20" /></button>
       </NavHeader>
     </div>
     <div class="picker-content">
       <div class="picker-intro"><div class="orb-anchor" data-guide-orb-anchor="pick" aria-hidden="true"></div><h1>今晚，谁来打动你？</h1></div>
-      <RestaurantDeck v-if="store.swipeCandidates.length && !full" ref="deck"
-        :restaurants="store.swipeCandidates" :center="store.filters.center"
-        :disabled="entrance.active || filterOpen || pickerArrival.active"
-        @choose="store.swipeRestaurant" @inspect="router.push(`/restaurant/${$event}`)" />
-      <div v-else class="deck-empty">
-        <div class="empty-ticket"><AppIcon :name="store.canStartDebate ? 'ticket' : 'fork'" :size="42" /></div>
-        <h2>{{ emptyTitle }}</h2>
-        <div class="empty-actions">
-          <button v-if="!full && store.candidates.length" class="text-btn" @click="store.resetSwipes"><AppIcon name="refresh" :size="17" />再看一轮</button>
-          <button v-else-if="!store.candidates.length" class="text-btn" @click="filterOpen = true"><AppIcon name="filter" :size="17" />调整口味和范围</button>
-        </div>
+      <div class="picker-stage">
+        <Transition name="casting">
+          <RestaurantDeck v-if="!deckFinished" ref="deck" key="cards"
+            :restaurants="store.swipeCandidates" :center="store.filters.center"
+            :disabled="entrance.active || filterOpen || pickerArrival.active"
+            @choose="store.swipeRestaurant" @inspect="router.push(`/restaurant/${$event}`)" />
+          <div v-else key="ready" class="deck-empty">
+            <OpeningClapper v-if="store.canStartDebate" :playing="clapping || entrance.active"
+              :disabled="pickerArrival.active || filterOpen" :style="{ '--clap-duration': `${CLAP_DURATION}ms` }" @clap="start" />
+            <template v-else>
+              <div class="empty-ticket"><AppIcon name="fork" :size="42" /></div>
+              <h2>{{ emptyTitle }}</h2>
+            </template>
+            <div class="empty-actions">
+              <button v-if="!full && store.candidates.length" class="text-btn" :disabled="clapping || entrance.active" @click="store.resetSwipes"><AppIcon name="refresh" :size="17" />再看一轮</button>
+              <button v-else-if="!store.candidates.length" class="text-btn" @click="filterOpen = true"><AppIcon name="filter" :size="17" />调整口味和范围</button>
+            </div>
+          </div>
+        </Transition>
       </div>
     </div>
     <div class="picker-footer">
@@ -34,7 +39,7 @@
           <div class="chosen-restaurants" aria-label="已邀请的饭店，点击可取消邀请">
             <button v-for="restaurant in store.selected" :key="restaurant.id" class="chosen-restaurant"
               :data-contestant-id="restaurant.id" :aria-label="`取消邀请${restaurant.name}`"
-              :disabled="deck?.busy || entrance.active" @click="store.removeSelection(restaurant.id)">
+              :disabled="deck?.busy || clapping || entrance.active" @click="store.removeSelection(restaurant.id)">
               <span class="avatar" :style="{ background: `${restaurant.color}12` }"><CharacterAvatar :character="restaurant.character" :name="restaurant.host" portrait /></span>
               <span class="remove-mark"><AppIcon name="close" :size="10" /></span>
               <span class="host-name">{{ restaurant.host }}</span>
@@ -51,7 +56,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { MAX_CONTESTANTS } from '@/data/app'
 import { useDiningStore } from '@/stores/dining'
@@ -64,23 +69,37 @@ import CharacterAvatar from '@/components/CharacterAvatar.vue'
 import AMapView from '@/components/AMapView.vue'
 import BottomSheet from '@/components/BottomSheet.vue'
 import FilterFields from '@/components/FilterFields.vue'
+import OpeningClapper from '@/components/OpeningClapper.vue'
 
 const store = useDiningStore(), entrance = useEntranceStore(), router = useRouter()
 const pickerArrival = usePickerArrivalStore()
 const page = ref<HTMLElement>(), deck = ref<InstanceType<typeof RestaurantDeck>>()
 const mapView = ref<InstanceType<typeof AMapView>>()
 const filterOpen = ref(false)
+const clapping = ref(false)
+const CLAP_DURATION = 1100
+let clapTimer: ReturnType<typeof setTimeout> | undefined
 const full = computed(() => store.selected.length >= MAX_CONTESTANTS)
-const emptyTitle = computed(() => !store.candidates.length ? '这一轮，还没找到合适的' : full.value ? '今晚的饭店，都就位了' : store.canStartDebate ? '心动的饭店，就这些' : store.selected.length ? '再找个聊得来的' : '还没心动？')
+const deckFinished = computed(() => full.value || !store.swipeCandidates.length)
+const emptyTitle = computed(() => !store.candidates.length ? '这一轮，还没找到合适的' : store.selected.length ? '再找个聊得来的' : '还没心动？')
 
 // Apply edited limits to invitations without replacing the user's choices with a default cast.
 function closeFilters() { store.reconcileSelection(); filterOpen.value = false }
 
-// The map warms up behind the cards, then the existing gathering and curtain sequence takes over.
+// Finish the clap once before handing the selected cast to the existing opening sequence.
 function start() {
-  if (deck.value?.busy || entrance.active || !page.value) return
+  if (clapping.value || deck.value?.busy || entrance.active || pickerArrival.active || filterOpen.value || !deckFinished.value || !page.value) return
   store.reconcileSelection()
   if (!store.canStartDebate) return
+  clapping.value = true
+  void import('@/views/DebateView.vue')
+  const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : CLAP_DURATION
+  clapTimer = setTimeout(gather, duration)
+}
+
+// The map warms up behind the cards, then gathering and the curtain take over after the clap.
+function gather() {
+  if (entrance.active || !page.value || !store.canStartDebate) { clapping.value = false; return }
   const actors = [...store.selected]
   const initial = page.value.getBoundingClientRect()
   const initialHeight = window.innerHeight
@@ -108,10 +127,11 @@ function start() {
     },
     focusTarget: () => { if (mapAvailable) mapView.value?.focusTarget() },
   })
-  void import('@/views/DebateView.vue')
+  clapping.value = false
 }
 
 onMounted(store.reconcileSelection)
+onBeforeUnmount(() => clearTimeout(clapTimer))
 </script>
 
 <style lang="less" scoped>
@@ -147,28 +167,7 @@ onMounted(store.reconcileSelection)
     flex-shrink: 0;
     opacity: var(--picker-chrome, 1);
     transform: translateY(calc((1 - var(--picker-chrome, 1)) * -6px));
-    .picker-tools {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      flex-shrink: 0;
-      .icon-btn { width: 34px; height: 44px; color: #8d7768; }
-      .start-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        min-height: 38px;
-        padding: 7px 8px;
-        margin-left: 3px;
-        border: 1px solid #d5a44a;
-        border-radius: 20px;
-        background: var(--gold);
-        color: var(--ink);
-        font-size: var(--label-size);
-        font-weight: var(--weight-semibold);
-        white-space: nowrap;
-      }
-    }
+    .filter-button { flex-shrink: 0; width: 34px; height: 44px; color: #8d7768; }
   }
 
   .picker-content {
@@ -204,13 +203,25 @@ onMounted(store.reconcileSelection)
       }
     }
 
+    .picker-stage {
+      display: grid;
+      flex: 1;
+      min-width: 0;
+
+      >* { grid-area: 1 / 1; }
+      >.casting-enter-active { transition: opacity .65s ease .12s, transform .8s cubic-bezier(.22, .8, .25, 1) .12s; }
+      >.casting-leave-active { pointer-events: none; transition: opacity .3s ease, transform .45s ease; }
+      >.casting-enter-from { opacity: 0; transform: translateY(22px) scale(.97); }
+      >.casting-leave-to { opacity: 0; transform: translateY(-10px) scale(.98); }
+    }
+
     .deck-empty {
       display: flex;
       flex: 1;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      min-height: 240px;
+      min-height: 300px;
       text-align: center;
       opacity: var(--picker-cards, 1);
       transform: translateY(calc((1 - var(--picker-cards, 1)) * 12px));

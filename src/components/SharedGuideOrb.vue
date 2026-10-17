@@ -1,6 +1,6 @@
 <template>
   <div class="shared-guide-orb" :class="{ visible, suspended }" :style="orbStyle" aria-hidden="true">
-    <GuideOrb :listening="arrival.listening && route.path === '/input'" />
+    <GuideOrb :listening="arrival.listening && route.path === '/input'" :thinking="arrival.thinking && route.path === '/input'" />
   </div>
 </template>
 

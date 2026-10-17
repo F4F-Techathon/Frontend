@@ -4,28 +4,61 @@
       <button class="decision-button" @click="openDecision">做出决定<AppIcon name="arrow" :size="14" /></button>
     </NavHeader>
     <TheaterStage :restaurants="store.selected" :active-id="message?.restaurantId" :paused="store.paused"
-      :listening="sheet === 'input'" :speaking-state="message?.state" :entering="entrance.active" :progress="entrance.stageProgress" />
-    <div class="discussion-area"><article v-if="message" class="speech-card"><header><span class="speaker-dot" :style="{ background: activeRestaurant?.color }"></span><b>{{ message.speaker }}</b><span>{{ activeRestaurant?.name }}</span><button class="icon-btn audio-toggle" :aria-label="audio ? '关闭语音播放' : '开启语音播放'" @click="toggleAudio"><AppIcon :name="audio ? 'volume' : 'mute'" :size="17" /></button><button class="icon-btn" :aria-label="store.paused ? '继续讨论' : '暂停讨论'" @click="store.paused = !store.paused"><AppIcon :name="store.paused ? 'play' : 'pause'" :size="17" /></button></header><div class="speech-text" aria-live="off"><span>{{ message.text.slice(0, visibleCount) }}</span><span class="unspoken">{{ message.text.slice(visibleCount) }}</span></div><div class="progress"><i :style="{ width: `${progress}%` }"></i></div></article><EvidenceDisclosure v-if="message?.evidenceIds.length" :key="message.id" :ids="message.evidenceIds" dark @expand="store.paused = true" /></div>
-    <div class="debate-controls"><div class="control-row"><button class="keyboard-control icon-btn" aria-label="用文字补充需求" @click="debateSheet?.startInput(false)"><AppIcon name="keyboard" :size="23" /></button><button class="interrupt-button" @click="debateSheet?.startInput(true)"><AppIcon name="mic" :size="21" /><span>我也说两句</span></button><button class="pause-control icon-btn" :aria-label="store.paused ? '继续讨论' : '暂停讨论'" @click="store.paused = !store.paused"><AppIcon :name="store.paused ? 'play' : 'pause'" :size="21" /></button></div></div>
-    <DebateSheet ref="debateSheet" v-model="sheet" @intervene="resumeAfterIntervention" />
+      :listening="speech.listening.value" :speaking-state="message?.state" :entering="entrance.active" :progress="entrance.stageProgress" />
+    <div class="discussion-area">
+      <article v-if="message" class="speech-card" :class="{ 'is-listening': speech.listening.value }">
+        <header>
+          <span class="speaker-dot" :style="{ background: speech.listening.value ? 'var(--green)' : activeRestaurant?.color }"></span>
+          <b>{{ speech.listening.value ? '正在听你说' : message.speaker }}</b>
+          <template v-if="!speech.listening.value">
+            <span>{{ activeRestaurant?.name }}</span>
+            <button class="icon-btn audio-toggle" :aria-label="audio ? '关闭语音播放' : '开启语音播放'" @click="toggleAudio"><AppIcon :name="audio ? 'volume' : 'mute'" :size="17" /></button>
+            <button class="icon-btn" :aria-label="store.paused ? '继续讨论' : '暂停讨论'" @click="store.paused = !store.paused"><AppIcon :name="store.paused ? 'play' : 'pause'" :size="17" /></button>
+          </template>
+        </header>
+        <div class="speech-text" :aria-live="speech.listening.value ? 'polite' : 'off'">
+          <span v-if="speech.listening.value">{{ interruption || '…' }}</span>
+          <template v-else><span>{{ message.text.slice(0, visibleCount) }}</span><span class="unspoken">{{ message.text.slice(visibleCount) }}</span></template>
+        </div>
+        <div class="progress"><i :style="{ width: `${progress}%` }"></i></div>
+      </article>
+      <EvidencePanel v-if="!speech.listening.value && messageEvidence.length" :items="messageEvidence" dark />
+    </div>
+    <div class="debate-controls">
+      <p v-if="speech.error.value" class="voice-error" role="status">{{ speech.error.value }}</p>
+      <div class="control-row">
+        <button class="interrupt-button" :class="{ listening: speech.listening.value }" :disabled="finishing"
+          :aria-pressed="speech.listening.value" :aria-busy="finishing" @click="toggleVoice">
+          <span v-if="speech.listening.value" class="voice-wave" aria-hidden="true"><i v-for="n in 5" :key="n"></i></span>
+          <AppIcon v-else name="mic" :size="21" />
+          <span>{{ finishing ? '稍等…' : speech.listening.value ? '说好了' : '我也说两句' }}</span>
+        </button>
+        <button class="pause-control icon-btn" :disabled="speech.listening.value" :aria-label="store.paused ? '继续讨论' : '暂停讨论'" @click="store.paused = !store.paused"><AppIcon :name="store.paused ? 'play' : 'pause'" :size="21" /></button>
+      </div>
+    </div>
+    <DebateSheet v-model="sheet" />
   </section>
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDiningStore } from '@/stores/dining'
+import { useSpeechInput } from '@/composables/useSpeechInput'
 import { APP_NAME } from '@/data/app'
+import { getEvidence } from '@/data/restaurants'
 import NavHeader from '@/components/NavHeader.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import TheaterStage from '@/components/TheaterStage.vue'
 import { useEntranceStore } from '@/stores/entrance'
 import { segment } from '@/lib/entranceMotion'
 import DebateSheet from '@/components/DebateSheet.vue'
-import EvidenceDisclosure from '@/components/EvidenceDisclosure.vue'
+import EvidencePanel from '@/components/EvidencePanel.vue'
 const store = useDiningStore(), sheet = ref(''), audio = ref(false), visibleCount = ref(0)
-const debateSheet = ref<InstanceType<typeof DebateSheet>>()
+const interruption = ref(''), finishing = ref(false)
+const speech = useSpeechInput((text) => { interruption.value = text }, { onComplete: submitInterruption })
 const entrance = useEntranceStore()
 const revealProgress = computed(() => entrance.active ? segment(entrance.stageProgress, .65, 1) : 1)
 const message = computed(() => store.currentMessage), activeRestaurant = computed(() => store.selected.find((r) => r.id === message.value?.restaurantId))
+const messageEvidence = computed(() => getEvidence(message.value?.evidenceIds || []))
 const progress = computed(() => Math.min(100, visibleCount.value / (message.value?.text.length || 1) * 100))
 let interval: ReturnType<typeof setInterval>, hold = 0, utterance: SpeechSynthesisUtterance | undefined, speechActive = false
 
@@ -51,16 +84,33 @@ function startPlayback(reset = false) {
 function stopPlayback() { clearInterval(interval); speechActive = false; if (utterance) { utterance.onend = null; utterance.onerror = null }; window.speechSynthesis?.cancel() }
 function nextMessage() { stopPlayback(); store.recordCurrent(); if (store.messageIndex < store.messages.length - 1) { store.messageIndex++; hold = 0; visibleCount.value = 0 } else openDecision() }
 function toggleAudio() { if (!('speechSynthesis' in window)) { store.notify('这个浏览器不支持朗读，字幕模式仍可使用'); return }; audio.value = !audio.value; if (audio.value) { visibleCount.value = 0; speakRemaining() } else { stopPlayback(); startPlayback() } }
-function openSheet(value: string) { store.paused = true; sheet.value = value }
+function openSheet(value: string) { speech.cancel(); finishing.value = false; store.paused = true; sheet.value = value }
 
-// The sheet updates requirements; the player restarts the current caption from the beginning.
-function resumeAfterIntervention() { visibleCount.value = 0; hold = 0; store.paused = false }
+// Speaking takes over the existing stage card and pauses the current restaurant in place.
+function toggleVoice() {
+  if (finishing.value) return
+  if (speech.listening.value) { finishing.value = true; speech.stop(); return }
+  interruption.value = ''
+  stopPlayback()
+  store.paused = true
+  speech.start()
+}
+
+// The local UI demo continues when final recognition arrives, without a separate confirmation sheet.
+function submitInterruption(text: string) {
+  store.intervene(text)
+  if (store.messageIndex < store.messages.length - 1) store.messageIndex++
+  visibleCount.value = 0
+  hold = 0
+  store.paused = false
+}
 // Both the header action and the end of the discussion wait for the user's own choice.
 function openDecision() { stopPlayback(); store.recordCurrent(); openSheet(store.decisionCandidates.length ? 'decision' : 'no-match') }
-function onVisibility() { if (document.hidden) store.paused = true }
+function onVisibility() { if (document.hidden) { speech.cancel(); finishing.value = false; store.paused = true } }
 watch(() => entrance.active, (active) => { if (!active) startPlayback() })
 watch(() => store.messageIndex, () => startPlayback(true))
 watch(() => store.paused, (paused) => { if (paused) stopPlayback(); else startPlayback() })
+watch(speech.listening, (listening) => { if (!listening) finishing.value = false }, { flush: 'sync' })
 onMounted(() => { if (store.messageIndex >= store.messages.length) store.messageIndex = 0; startPlayback(); document.addEventListener('visibilitychange', onVisibility) })
 onBeforeUnmount(() => { stopPlayback(); document.removeEventListener('visibilitychange', onVisibility) })
 </script>
@@ -93,7 +143,119 @@ onBeforeUnmount(() => { stopPlayback(); document.removeEventListener('visibility
     &:active { transform: scale(.97); }
   }
 
-  .discussion-area { flex: 1; width: 100%; max-width: var(--content-width); margin: 0 auto; padding: 16px var(--inset-right) 0 var(--inset-left);  .speech-card { background: #fff9ef; color: var(--ink); padding: clamp(14px, 2vw, 24px) clamp(16px, 2.5vw, 28px) 14px; border: 1px solid #d7bb92; border-radius: 16px; box-shadow: 0 4px 0 #10091944; header { display: flex; align-items: center; gap: 6px; margin-bottom: 9px; .speaker-dot { width: 6px; height: 6px; border-radius: 50%; } b { font-size: var(--label-size); } >span:last-of-type { font-size: var(--small-size); color: #ae9584; } .icon-btn { margin-left: 0; width: 28px; height: 28px; color: #8d7869; background: #ede4d5; &.audio-toggle { margin-left: auto; background: transparent; } } } .speech-text { font-size: var(--body-size); line-height: var(--line-body); min-height: 80px; .unspoken { color: #cabcae; } } .progress { height: 2px; margin-top: 16px; background: #e4d8c4; i { height: 100%; display: block; background: var(--gold); transition: width .1s; } } } }
-  .debate-controls { width: 100%; max-width: var(--content-width); margin: 0 auto; padding: 0 var(--inset-right) calc(14px + env(safe-area-inset-bottom)) var(--inset-left); background: #211229; .control-row { display: flex; justify-content: space-between; align-items: center; gap: 14px; .keyboard-control, .pause-control { width: 46px; height: 46px; flex-shrink: 0; border: 1px solid #57415f; color: #c8b3c9; background: #ffffff03; } .interrupt-button { display: flex; align-items: center; justify-content: center; gap: 9px; flex: 1; min-width: 0; min-height: var(--control-height); border-radius: 50px; background: var(--gold); color: var(--ink); border: 1px solid #ebc171; box-shadow: 0 3px 0 #89632f; font-size: var(--body-size); font-weight: var(--weight-semibold); } } }
+  .discussion-area {
+    flex: 1;
+    width: 100%;
+    max-width: var(--content-width);
+    margin: 0 auto;
+    padding: 16px var(--inset-right) 0 var(--inset-left);
+
+    .speech-card {
+      background: #fff9ef;
+      color: var(--ink);
+      padding: clamp(14px, 2vw, 24px) clamp(16px, 2.5vw, 28px) 14px;
+      border: 1px solid #d7bb92;
+      border-radius: 16px;
+      box-shadow: 0 4px 0 #10091944;
+      transition: background .35s ease, border-color .35s ease;
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 28px;
+        margin-bottom: 9px;
+        .speaker-dot { width: 6px; height: 6px; border-radius: 50%; }
+        b { font-size: var(--label-size); }
+        >span:last-of-type { font-size: var(--small-size); color: #ae9584; }
+        .icon-btn { margin-left: 0; width: 28px; height: 28px; color: #8d7869; background: #ede4d5; &.audio-toggle { margin-left: auto; background: transparent; } }
+      }
+      .speech-text {
+        font-size: var(--body-size);
+        line-height: var(--line-body);
+        min-height: 80px;
+        overflow-wrap: anywhere;
+        .unspoken { color: #cabcae; }
+      }
+      .progress {
+        height: 2px;
+        margin-top: 16px;
+        background: #e4d8c4;
+        transition: opacity .25s ease;
+        i { height: 100%; display: block; background: var(--gold); transition: width .1s; }
+      }
+      &.is-listening {
+        background: #f3eaf2;
+        border-color: #d6c1d9;
+        .speech-text { color: #66506d; }
+        .progress { opacity: 0; }
+      }
+    }
+  }
+
+  .debate-controls {
+    width: 100%;
+    max-width: var(--content-width);
+    margin: 0 auto;
+    padding: 0 var(--inset-right) calc(14px + env(safe-area-inset-bottom)) var(--inset-left);
+    background: #211229;
+    .voice-error { margin: 0 0 12px; color: #e6b6b1; font-size: var(--label-size); line-height: var(--line-body); }
+    .control-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+
+      .pause-control {
+        width: 46px;
+        height: 46px;
+        flex-shrink: 0;
+        border: 1px solid #57415f;
+        color: #c8b3c9;
+        background: #ffffff03;
+        &:disabled { opacity: .35; }
+      }
+      .interrupt-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        flex: 1;
+        min-width: 0;
+        min-height: var(--control-height);
+        border-radius: 50px;
+        background: var(--gold);
+        color: var(--ink);
+        border: 1px solid #ebc171;
+        box-shadow: 0 3px 0 #89632f;
+        font-size: var(--body-size);
+        font-weight: var(--weight-semibold);
+        transition: background .35s ease, color .35s ease, border-color .35s ease, box-shadow .35s ease;
+        &.listening { background: #e6d8e8; color: #65476e; border-color: #c9b4d0; box-shadow: 0 3px 0 #9d83a7; }
+
+        .voice-wave {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 3px;
+          width: 21px;
+          height: 21px;
+          i {
+            width: 2px;
+            height: 16px;
+            border-radius: 3px;
+            background: currentColor;
+            animation: stage-voice-wave .85s ease-in-out infinite alternate;
+            &:nth-child(2) { animation-delay: -.25s; }
+            &:nth-child(3) { animation-delay: -.5s; }
+            &:nth-child(4) { animation-delay: -.15s; }
+            &:nth-child(5) { animation-delay: -.4s; }
+          }
+        }
+      }
+    }
+  }
+
+  @keyframes stage-voice-wave { from { transform: scaleY(.3); } to { transform: scaleY(1); } }
 }
 </style>

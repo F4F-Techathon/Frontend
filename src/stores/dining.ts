@@ -5,6 +5,7 @@ import { MIN_CONTESTANTS, MAX_CONTESTANTS } from '@/data/app'
 import { createDebate } from '@/data/debate'
 import { distanceKm, matchesFilters, parseRequirements } from '@/lib/filtering'
 import type { Filters, HistoryEntry } from '@/data/types'
+import { useIntakeStore } from './intake'
 
 const STORAGE_KEY = 'tonight-dining-v1'
 
@@ -25,6 +26,8 @@ export const useDiningStore = defineStore('dining', () => {
     if (saved && typeof saved.rawInput === 'string' && Array.isArray(saved.selectedIds) && Array.isArray(saved.history)) {
       rawInput.value = saved.rawInput
       filters.value = { ...defaultFilters(), ...saved.filters }
+      if (!Array.isArray(saved.filters?.allergies) && typeof saved.filters?.allergy === 'string' && saved.filters.allergy) filters.value.allergies = [saved.filters.allergy]
+      delete (filters.value as Filters & { allergy?: string }).allergy
       selectedIds.value = [...new Set<string>(saved.selectedIds.filter((id: string) => restaurants.some((r) => r.id === id)))].slice(0, MAX_CONTESTANTS)
       if (Array.isArray(saved.swipeHistory)) {
         swipeHistory.value = saved.swipeHistory.filter((choice: { id: string; liked: boolean }, index: number, choices: { id: string }[]) =>
@@ -53,7 +56,9 @@ export const useDiningStore = defineStore('dining', () => {
     ...(filters.value.quiet ? [{ key: 'quiet', text: '安静一点', hard: false }] : []),
     ...(filters.value.mild && !filters.value.noSpice ? [{ key: 'mild', text: '偏好少辣', hard: false }] : []),
     ...(filters.value.noSpice ? [{ key: 'noSpice', text: '不吃辣', hard: true }] : []),
-    ...(filters.value.allergy ? [{ key: 'allergy', text: `${filters.value.allergy}过敏`, hard: true }] : []),
+    ...filters.value.allergies.map((item) => ({ key: `allergy:${item}`, text: `${item}过敏`, hard: true })),
+    ...filters.value.avoidedIngredients.map((item) => ({ key: `avoid:${item}`, text: `不吃${item}`, hard: true })),
+    ...filters.value.excludedCuisines.map((item) => ({ key: `exclude:${item}`, text: `不吃${item}`, hard: true })),
     ...filters.value.cuisines.map((c) => ({ key: `cuisine:${c}`, text: c, hard: true })),
   ])
 
@@ -68,10 +73,10 @@ export const useDiningStore = defineStore('dining', () => {
   function notify(text: string) { toast.value = text; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.value = '' }, 3000) }
 
   // Clears the current dining flow when starting from the home page.
-  function begin() { rawInput.value = ''; filters.value = defaultFilters(); selectedIds.value = []; swipeHistory.value = []; messageIndex.value = 0; history.value = []; winnerId.value = '' }
+  function begin() { useIntakeStore().reset(); rawInput.value = ''; filters.value = defaultFilters(); selectedIds.value = []; swipeHistory.value = []; messageIndex.value = 0; history.value = []; winnerId.value = '' }
 
   // Parses the initial description before the user invites restaurants from the swipe deck.
-  function understand(text: string) { rawInput.value = text.trim(); filters.value = parseRequirements(text, defaultFilters()); selectedIds.value = []; swipeHistory.value = []; winnerId.value = ''; history.value = []; messageIndex.value = 0 }
+  function understand(text: string, confirmed?: Filters) { rawInput.value = text.trim(); filters.value = confirmed || parseRequirements(text, defaultFilters()); selectedIds.value = []; swipeHistory.value = []; winnerId.value = ''; history.value = []; messageIndex.value = 0 }
 
   // Condition edits remove ineligible invitations without silently adding other restaurants.
   function reconcileSelection() {

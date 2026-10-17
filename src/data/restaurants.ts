@@ -23,12 +23,17 @@ export const restaurants: Restaurant[] = [
 ]
 
 export const evidence: Evidence[] = restaurants.flatMap((r) => [
-  { id: `${r.id}-info`, restaurantId: r.id, kind: 'business' as const, title: '商家基础资料', text: `${r.cuisine} · ${r.price ? `参考人均 ¥${r.price}` : '人均价格未知'}。特色：${r.specialty}。${r.hours ? `营业时间 ${r.hours}。` : '营业时间暂无资料。'}`, source: '本地演示商家资料', date: '2026-10-16', mock: true },
+  { id: `${r.id}-info`, restaurantId: r.id, kind: 'business' as const, title: '商家基础资料', text: `${r.cuisine} · ${r.price ? `参考人均 ¥${r.price}` : '人均价格未知'}。特色：${r.specialty}。${r.hours ? `营业时间 ${r.hours}。` : '营业时间暂无资料。'}`, images: [{ src: r.cover.src, alt: r.cover.alt }], source: '演示商家资料 · 菜系示意图', date: '2026-10-16', mock: true },
   { id: `${r.id}-review`, restaurantId: r.id, kind: 'review' as const, title: '关于环境与用餐体验', text: r.quiet === true ? `“店里适合坐下来慢慢聊，${r.tags[0]}很有自己的特色。”` : r.quiet === false ? `“一起吃饭很有烟火气，人多的时候也比较热闹。”` : '“小店很温暖，不过这次没有特别留意店内的噪声。”', source: '演示评价 · 非真实用户评论', date: '2026-10-12', mock: true },
   { id: `${r.id}-note`, restaurantId: r.id, kind: 'summary' as const, title: '用餐前需要确认', text: r.caveat, source: '基于演示资料的规则分析', date: '2026-10-16', mock: true },
 ])
 
-export const defaultFilters = (): Filters => ({ minBudget: 0, maxBudget: 0, radius: 3, cuisines: [], scene: '', people: 2, time: '今晚 19:30', quiet: false, mild: false, noSpice: false, allergy: '', locationName: '上海 · 静安寺', center: [121.4453, 31.2231] })
+// Resolves the sources in statement order for the stage, history and restaurant details.
+export function getEvidence(ids: string[]): Evidence[] {
+  return ids.map((id) => evidence.find((item) => item.id === id)).filter((item) => !!item)
+}
+
+export const defaultFilters = (): Filters => ({ minBudget: 0, maxBudget: 0, radius: 3, cuisines: [], excludedCuisines: [], preferences: [], scene: '', people: 2, time: '今晚 19:30', quiet: false, mild: false, noSpice: false, allergies: [], avoidedIngredients: [], locationName: '上海 · 静安寺', center: [121.4453, 31.2231] })
 export const cuisines = [...new Set(restaurants.map((r) => r.cuisine))]
 export const scenes = ['约会', '朋友聚餐', '家庭聚会', '一个人吃', '商务用餐']
 export const budgetOptions = [{ label: '不限', min: 0, max: 0 }, { label: '¥50 以下', min: 0, max: 50 }, { label: '¥50–100', min: 50, max: 100 }, { label: '¥100–200', min: 100, max: 200 }, { label: '¥200 以上', min: 200, max: 0 }]

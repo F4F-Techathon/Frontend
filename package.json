@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test scripts/dining.test.mjs",
+    "test": "node --test scripts/*.test.mjs",
     "dev": "vite",
+    "start": "node server/index.ts",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "build-only": "vite build",

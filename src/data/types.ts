@@ -7,9 +7,10 @@ export interface Evidence {
   restaurantId: string
   kind: 'business' | 'review' | 'summary'
   title: string
-  text: string
+  text?: string
+  images?: { src: string; alt: string }[]
   source: string
-  date: string
+  date?: string
   mock: boolean
   url?: string
 }
@@ -31,6 +32,7 @@ export interface Restaurant {
   quiet: boolean | null
   spice: number | null
   allergens: string[] | null
+  ingredients?: string[]
   specialty: string
   intro: string
   caveat: string
@@ -42,13 +44,16 @@ export interface Filters {
   maxBudget: number
   radius: number
   cuisines: string[]
+  excludedCuisines: string[]
+  preferences: string[]
   scene: string
   people: number
   time: string
   quiet: boolean
   mild: boolean
   noSpice: boolean
-  allergy: string
+  allergies: string[]
+  avoidedIngredients: string[]
   locationName: string
   center: Coordinates
 }

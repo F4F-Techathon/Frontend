@@ -62,5 +62,5 @@ export function useSpeechInput(onText: (text: string) => void, options: SpeechOp
   }
 
   onBeforeUnmount(cancel)
-  return { listening, error, transcript, start, stop }
+  return { listening, error, transcript, start, stop, cancel }
 }

@@ -45,3 +45,30 @@ export function loadAMap(): Promise<AMapSDK> {
   })
   return pending
 }
+
+// Resolve a spoken place through POI data, keeping ambiguous results available for user confirmation.
+export async function findDiningPlaces(keyword: string): Promise<Place[]> {
+  const AMap = await loadAMap()
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('位置查找有点慢，再试一次吧。')), 12000)
+    new AMap.PlaceSearch({ pageSize: 5, citylimit: false }).search(keyword, (status, result) => {
+      clearTimeout(timer)
+      const places = status === 'complete' ? result.poiList?.pois || [] : []
+      if (places.length) resolve(places)
+      else reject(new Error('还没找到这个位置，再说得具体一点吧。'))
+    })
+  })
+}
+
+// Nearby searches use a real GCJ-02 position instead of the demo map's fallback center.
+export async function locateDiningCenter(): Promise<{ name: string; center: Coordinates }> {
+  const AMap = await loadAMap()
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('还没确定你的位置，可以说一个附近的地名。')), 12000)
+    new AMap.Geolocation({ enableHighAccuracy: true, timeout: 10000, convert: true }).getCurrentPosition((status, result) => {
+      clearTimeout(timer)
+      if (status === 'complete' && result.position) resolve({ name: result.formattedAddress || '当前位置', center: [result.position.lng, result.position.lat] })
+      else reject(new Error('还没确定你的位置，可以说一个附近的地名。'))
+    })
+  })
+}

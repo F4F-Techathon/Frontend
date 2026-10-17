@@ -18,8 +18,8 @@
             @pointerdown.stop @click="emit('inspect', restaurant.id)"><AppIcon name="info" :size="20" /></button>
           <div class="host-portrait"><CharacterAvatar :character="restaurant.character" :name="restaurant.host" portrait
             :state="index === 0 && delta.x > 35 ? 'happy' : index === 0 && delta.x < -35 ? 'disagree' : 'idle'" /></div>
-          <span v-if="index === 0" class="choice-stamp invite" :style="{ opacity: delta.x > 0 ? progress : 0 }" aria-hidden="true">请就位</span>
-          <span v-if="index === 0" class="choice-stamp skip" :style="{ opacity: delta.x < 0 ? progress : 0 }" aria-hidden="true">下次吧</span>
+          <span v-if="index === 0" class="choice-stamp invite" :style="{ opacity: delta.x > 0 ? stampOpacity : 0 }" aria-hidden="true">请就位</span>
+          <span v-if="index === 0" class="choice-stamp skip" :style="{ opacity: delta.x < 0 ? stampOpacity : 0 }" aria-hidden="true">下次吧</span>
         </div>
         <div class="card-copy">
           <div class="restaurant-heading"><h2>{{ restaurant.name }}</h2><span>{{ restaurant.price ? `¥${restaurant.price} / 人` : '价格待确认' }}</span></div>
@@ -62,6 +62,7 @@ const dragging = ref(false), exiting = ref(false)
 const busy = computed(() => dragging.value || exiting.value)
 const cardWidth = ref(350)
 const progress = computed(() => Math.min(1, Math.abs(delta.value.x) / Math.max(64, Math.min(cardWidth.value * .25, 120))))
+const stampOpacity = computed(() => Math.min(1, progress.value * 2))
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 let pointer: { id: number; x: number; y: number; time: number; element: HTMLElement } | undefined
 let departing: { id: string; liked: boolean } | undefined

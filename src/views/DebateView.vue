@@ -27,11 +27,11 @@
     <div class="debate-controls">
       <p v-if="speech.error.value" class="voice-error" role="status">{{ speech.error.value }}</p>
       <div class="control-row">
-        <button class="interrupt-button" :class="{ listening: speech.listening.value }" :disabled="finishing"
-          :aria-pressed="speech.listening.value" :aria-busy="finishing" @click="toggleVoice">
+        <button class="interrupt-button" :class="{ listening: speech.listening.value }" :disabled="finishing || entrance.active || !!sheet"
+          :aria-pressed="speech.holding.value" :aria-busy="finishing" :aria-label="speech.holding.value ? '松开发送' : '长按说话'" v-on="speech.events">
           <span v-if="speech.listening.value" class="voice-wave" aria-hidden="true"><i v-for="n in 5" :key="n"></i></span>
           <AppIcon v-else name="mic" :size="21" />
-          <span>{{ finishing ? '稍等…' : speech.listening.value ? '说好了' : '我也说两句' }}</span>
+          <span>{{ finishing ? '稍等…' : speech.holding.value ? '松开发送' : '长按说话' }}</span>
         </button>
         <button class="pause-control icon-btn" :disabled="speech.listening.value" :aria-label="store.paused ? '继续讨论' : '暂停讨论'" @click="store.paused = !store.paused"><AppIcon :name="store.paused ? 'play' : 'pause'" :size="21" /></button>
       </div>
@@ -42,7 +42,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDiningStore } from '@/stores/dining'
-import { useSpeechInput } from '@/composables/useSpeechInput'
+import { usePressToTalk } from '@/composables/usePressToTalk'
 import { APP_NAME } from '@/data/app'
 import { getEvidence } from '@/data/restaurants'
 import NavHeader from '@/components/NavHeader.vue'
@@ -53,9 +53,14 @@ import { segment } from '@/lib/entranceMotion'
 import DebateSheet from '@/components/DebateSheet.vue'
 import EvidencePanel from '@/components/EvidencePanel.vue'
 const store = useDiningStore(), sheet = ref(''), audio = ref(false), visibleCount = ref(0)
-const interruption = ref(''), finishing = ref(false)
-const speech = useSpeechInput((text) => { interruption.value = text }, { onComplete: submitInterruption })
+const interruption = ref('')
 const entrance = useEntranceStore()
+const speech = usePressToTalk((text) => { interruption.value = text }, {
+  disabled: () => entrance.active || !!sheet.value,
+  onStart: beginInterruption,
+  onComplete: submitInterruption,
+})
+const finishing = speech.finishing
 const revealProgress = computed(() => entrance.active ? segment(entrance.stageProgress, .65, 1) : 1)
 const message = computed(() => store.currentMessage), activeRestaurant = computed(() => store.selected.find((r) => r.id === message.value?.restaurantId))
 const messageEvidence = computed(() => getEvidence(message.value?.evidenceIds || []))
@@ -84,16 +89,13 @@ function startPlayback(reset = false) {
 function stopPlayback() { clearInterval(interval); speechActive = false; if (utterance) { utterance.onend = null; utterance.onerror = null }; window.speechSynthesis?.cancel() }
 function nextMessage() { stopPlayback(); store.recordCurrent(); if (store.messageIndex < store.messages.length - 1) { store.messageIndex++; hold = 0; visibleCount.value = 0 } else openDecision() }
 function toggleAudio() { if (!('speechSynthesis' in window)) { store.notify('这个浏览器不支持朗读，字幕模式仍可使用'); return }; audio.value = !audio.value; if (audio.value) { visibleCount.value = 0; speakRemaining() } else { stopPlayback(); startPlayback() } }
-function openSheet(value: string) { speech.cancel(); finishing.value = false; store.paused = true; sheet.value = value }
+function openSheet(value: string) { speech.cancel(); store.paused = true; sheet.value = value }
 
 // Speaking takes over the existing stage card and pauses the current restaurant in place.
-function toggleVoice() {
-  if (finishing.value) return
-  if (speech.listening.value) { finishing.value = true; speech.stop(); return }
+function beginInterruption() {
   interruption.value = ''
   stopPlayback()
   store.paused = true
-  speech.start()
 }
 
 // The local UI demo continues when final recognition arrives, without a separate confirmation sheet.
@@ -106,11 +108,10 @@ function submitInterruption(text: string) {
 }
 // Both the header action and the end of the discussion wait for the user's own choice.
 function openDecision() { stopPlayback(); store.recordCurrent(); openSheet(store.decisionCandidates.length ? 'decision' : 'no-match') }
-function onVisibility() { if (document.hidden) { speech.cancel(); finishing.value = false; store.paused = true } }
+function onVisibility() { if (document.hidden) store.paused = true }
 watch(() => entrance.active, (active) => { if (!active) startPlayback() })
 watch(() => store.messageIndex, () => startPlayback(true))
 watch(() => store.paused, (paused) => { if (paused) stopPlayback(); else startPlayback() })
-watch(speech.listening, (listening) => { if (!listening) finishing.value = false }, { flush: 'sync' })
 onMounted(() => { if (store.messageIndex >= store.messages.length) store.messageIndex = 0; startPlayback(); document.addEventListener('visibilitychange', onVisibility) })
 onBeforeUnmount(() => { stopPlayback(); document.removeEventListener('visibilitychange', onVisibility) })
 </script>
@@ -223,6 +224,10 @@ onBeforeUnmount(() => { stopPlayback(); document.removeEventListener('visibility
         flex: 1;
         min-width: 0;
         min-height: var(--control-height);
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
         border-radius: 50px;
         background: var(--gold);
         color: var(--ink);

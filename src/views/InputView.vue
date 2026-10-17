@@ -25,11 +25,11 @@
     </div>
     <div class="voice-action">
       <button class="btn voice-button" :class="{ listening: speech.listening.value }"
-        :disabled="intake.loading || processing || finishing" :aria-pressed="speech.listening.value" :aria-busy="intake.loading || finishing"
-        :aria-label="speech.listening.value ? '结束这次说话' : intake.error ? '重新说' : intake.result ? '继续说' : '点击说话'" @click="toggleSpeech">
+        :disabled="intake.loading || processing || finishing || pickerArrival.active" :aria-pressed="speech.holding.value" :aria-busy="intake.loading || finishing"
+        :aria-label="speech.holding.value ? '松开发送' : '长按说话'" v-on="speech.events">
         <span v-if="speech.listening.value" class="voice-wave" aria-hidden="true"><i v-for="n in 5" :key="n"></i></span>
         <AppIcon v-else name="mic" :size="23" />
-        <span>{{ intake.loading ? '整理中…' : finishing ? '稍等…' : speech.listening.value ? '说好了' : intake.error ? '重新说' : intake.result ? '继续说' : '点击说话' }}</span>
+        <span>{{ intake.loading ? '整理中…' : finishing ? '稍等…' : speech.holding.value ? '松开发送' : '长按说话' }}</span>
       </button>
       <button v-if="intake.result" class="continue-button" :disabled="!canContinue" @click="continueFlow">{{ processing ? '准备一下…' : '就这样，去挑饭店' }}<AppIcon name="arrow" :size="17" /></button>
     </div>
@@ -42,7 +42,7 @@ import { useRouter } from 'vue-router'
 import { useDiningStore } from '@/stores/dining'
 import { useIntakeStore } from '@/stores/intake'
 import { usePickerArrivalStore } from '@/stores/pickerArrival'
-import { useSpeechInput } from '@/composables/useSpeechInput'
+import { usePressToTalk } from '@/composables/usePressToTalk'
 import { filtersFromRequirements, requirementRows } from '@/lib/intakeRequirements'
 import { findDiningPlaces, locateDiningCenter } from '@/lib/amap'
 import type { Place } from '@/lib/amap'
@@ -53,24 +53,22 @@ import RequirementsCard from '@/components/RequirementsCard.vue'
 
 const router = useRouter(), store = useDiningStore(), intake = useIntakeStore()
 const pickerArrival = usePickerArrivalStore()
-const text = ref(''), processing = ref(false), finishing = ref(false)
+const text = ref(''), processing = ref(false)
 const places = ref<Place[]>([]), locationError = ref('')
 const resolvedLocation = ref<{ query: string; name: string; center: Coordinates }>()
-const speech = useSpeechInput((value) => { text.value = value }, { continuous: false, onComplete: (value) => { void intake.submit(value) } })
+const speech = usePressToTalk((value) => { text.value = value }, {
+  disabled: () => intake.loading || processing.value || pickerArrival.active,
+  onStart: () => { text.value = ''; locationError.value = '' },
+  onComplete: (value) => { void intake.submit(value) },
+})
+const finishing = speech.finishing
 const hasFacts = computed(() => intake.result && requirementRows(intake.result.requirements).length > 0)
 const canContinue = computed(() => intake.canConfirm && !speech.listening.value && !finishing.value && !processing.value)
 let alive = true
 
-watch(speech.listening, (value) => { pickerArrival.listening = value; if (!value) finishing.value = false }, { immediate: true, flush: 'sync' })
+watch(speech.listening, (value) => { pickerArrival.listening = value }, { immediate: true, flush: 'sync' })
 watch(() => intake.loading, (value) => { pickerArrival.thinking = value }, { immediate: true, flush: 'sync' })
 watch(() => intake.result?.requirements.location, () => { resolvedLocation.value = undefined; places.value = []; locationError.value = '' })
-
-// Final recognition updates the draft; only the separate confirmation action leaves this page.
-function toggleSpeech() {
-  if (finishing.value || intake.loading || processing.value) return
-  if (speech.listening.value) { finishing.value = true; speech.stop() }
-  else { text.value = ''; locationError.value = ''; speech.start() }
-}
 
 function retryIntake() { speech.error.value = ''; void intake.retry() }
 
@@ -218,6 +216,10 @@ onBeforeUnmount(() => { alive = false; speech.cancel(); intake.cancel(); pickerA
 
     .voice-button {
       min-height: var(--control-height);
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
       background: var(--gold);
       border-color: #dca64a;
       box-shadow: 0 4px 0 #c28e32, 0 9px 24px #b0893d1c;

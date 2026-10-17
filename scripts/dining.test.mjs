@@ -24,6 +24,7 @@ const { useDiningStore } = await server.ssrLoadModule('/src/stores/dining.ts')
 const { runnerPose, contestantReveal, venuePose, curtainFolds, GATHER_DURATION, STAGE_HANDOFF_START } = await server.ssrLoadModule('/src/lib/entranceMotion.ts')
 const { useEntranceStore } = await server.ssrLoadModule('/src/stores/entrance.ts')
 const { useSpeechInput } = await server.ssrLoadModule('/src/composables/useSpeechInput.ts')
+const { usePressToTalk } = await server.ssrLoadModule('/src/composables/usePressToTalk.ts')
 const { stageSlots } = await server.ssrLoadModule('/src/lib/stageLayout.ts')
 const { RIG } = await server.ssrLoadModule('/src/lib/characterRig.js')
 const { cardStackPose, swipeDirection, VISIBLE_STACK_CARDS } = await server.ssrLoadModule('/src/lib/swipeMotion.ts')
@@ -36,18 +37,19 @@ function inviteRestaurants(store, count) {
 }
 
 // A component lifecycle and a fake recognition service exercise event ordering without a browser.
-function mountSpeech(t, options = {}, supported = true) {
-  const previousWindow = globalThis.window
+function mountSpeech(t, options = {}, supported = true, pressToTalk = false) {
+  const previousWindow = globalThis.window, previousDocument = globalThis.document
   const instances = [], heard = [], completed = []
   class FakeRecognition {
     constructor() { instances.push(this) }
     start() {}
-    stop() { this.stopped = true }
+    stop() { this.stopped = true; this.stopCount = (this.stopCount || 0) + 1 }
     abort() { this.aborted = true }
     result(text, isFinal) { this.onresult?.({ results: [{ 0: { transcript: text }, isFinal }] }) }
     end() { this.onend?.() }
   }
-  globalThis.window = supported ? { SpeechRecognition: FakeRecognition } : {}
+  globalThis.window = Object.assign(new EventTarget(), supported ? { SpeechRecognition: FakeRecognition } : {})
+  globalThis.document = Object.assign(new EventTarget(), { hidden: false })
   const renderer = createRenderer({
     createElement: () => ({}), createText: () => ({}), createComment: () => ({}),
     insert() {}, remove() {}, setElementText() {}, setText() {}, setComment() {}, patchProp() {},
@@ -55,13 +57,172 @@ function mountSpeech(t, options = {}, supported = true) {
   })
   let speech
   const app = renderer.createApp({ setup() {
-    speech = useSpeechInput((text) => heard.push(text), { ...options, onComplete: (text) => completed.push(text) })
+    speech = (pressToTalk ? usePressToTalk : useSpeechInput)((text) => heard.push(text), { ...options, onComplete: (text) => completed.push(text) })
     return () => h('div')
   } })
   app.mount({})
-  t.after(() => { app.unmount(); if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow })
+  t.after(() => {
+    app.unmount()
+    if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow
+    if (previousDocument === undefined) delete globalThis.document; else globalThis.document = previousDocument
+  })
   return { speech, instances, heard, completed, app }
 }
+
+// Model captured pointer delivery, including capture loss after a normal release, without opening a browser.
+function mountHold(t, options = {}) {
+  const mounted = mountSpeech(t, options, true, true)
+  let now = 0
+  t.mock.method(performance, 'now', () => now)
+  const captures = new Set()
+  const target = {
+    setPointerCapture: (id) => captures.add(id),
+    hasPointerCapture: (id) => captures.has(id),
+    releasePointerCapture(id) { captures.delete(id); pointer('lostpointercapture', { pointerId: id }) },
+  }
+  function pointer(type, overrides = {}) {
+    mounted.speech.events[type]({ isPrimary: true, button: 0, pointerId: 7, currentTarget: target, preventDefault() {}, ...overrides })
+  }
+  function key(type, key = ' ', repeat = false) { mounted.speech.events[type]({ key, repeat, preventDefault() {} }) }
+  return { ...mounted, pointer, key, advance: (milliseconds = 500) => { now += milliseconds }, captures }
+}
+
+test('holding captures the pointer and release waits for final recognition before sending once', (t) => {
+  const { speech, instances, pointer, advance, completed, captures } = mountHold(t)
+  pointer('pointerdown')
+  assert(speech.holding.value)
+  assert(captures.has(7))
+  assert.equal(instances[0].continuous, true)
+  instances[0].result('两个人，人均', false)
+  advance()
+  pointer('pointerup', { pointerId: 8 })
+  assert(speech.holding.value)
+  pointer('pointerup')
+  assert.equal(speech.holding.value, false)
+  assert(speech.finishing.value)
+  assert.equal(captures.size, 0)
+  // Disabling a focused button during finalization must not discard its last words.
+  speech.events.blur()
+  pointer('pointerdown')
+  assert.equal(instances.length, 1)
+  instances[0].result('两个人，人均200以内', true)
+  instances[0].end()
+  instances[0].end()
+  assert.equal(speech.listening.value, false)
+  assert.deepEqual(completed, ['两个人，人均200以内'])
+})
+
+test('a quick tap, right click or secondary touch cannot send a voice turn', (t) => {
+  const { speech, instances, pointer, advance, completed } = mountHold(t)
+  pointer('pointerdown', { button: 2 })
+  pointer('pointerdown', { isPrimary: false })
+  assert.equal(instances.length, 0)
+  pointer('pointerdown')
+  const recording = instances[0], lateEnd = recording.onend
+  recording.result('误触', true)
+  advance(100)
+  pointer('pointerup')
+  lateEnd()
+  assert(recording.aborted)
+  assert.equal(speech.listening.value, false)
+  assert.deepEqual(completed, [])
+})
+
+test('a recognizer ending during a hold keeps the final words pending until release', (t) => {
+  const { speech, instances, pointer, advance, completed } = mountHold(t)
+  pointer('pointerdown')
+  instances[0].result('不吃辣，想吃粤菜', true)
+  instances[0].end()
+  assert(speech.holding.value)
+  assert(speech.listening.value)
+  assert.deepEqual(completed, [])
+  advance()
+  pointer('pointerup')
+  assert.deepEqual(completed, ['不吃辣，想吃粤菜'])
+  assert.equal(speech.listening.value, false)
+})
+
+test('lost touches, backgrounding and leaving cancel held or finalizing voice without late submissions', (t) => {
+  const { speech, instances, pointer, advance, completed, app } = mountHold(t)
+  const cancelActions = [
+    () => pointer('pointercancel'),
+    () => pointer('lostpointercapture'),
+    () => window.dispatchEvent(new Event('blur')),
+    () => { document.hidden = true; document.dispatchEvent(new Event('visibilitychange')); document.hidden = false },
+    () => speech.events.blur(),
+    () => speech.cancel(),
+    () => { pointer('pointerup'); window.dispatchEvent(new Event('blur')) },
+    () => app.unmount(),
+  ]
+  for (const cancel of cancelActions) {
+    pointer('pointerdown')
+    const recording = instances.at(-1), lateEnd = recording.onend
+    recording.result('这段话取消', true)
+    advance()
+    cancel()
+    lateEnd()
+    assert(recording.aborted)
+    assert.equal(speech.listening.value, false)
+    assert.equal(speech.finishing.value, false)
+    assert.deepEqual(completed, [])
+  }
+})
+
+test('Space and Enter support holding, ignore repeated keys and release only the matching key', (t) => {
+  const { speech, instances, key, advance, completed } = mountHold(t)
+  key('keydown', 'a')
+  assert.equal(instances.length, 0)
+  key('keydown')
+  key('keydown', ' ', true)
+  key('keydown', 'Enter')
+  assert.equal(instances.length, 1)
+  advance()
+  key('keyup', 'Enter')
+  assert(speech.holding.value)
+  key('keyup')
+  instances[0].result('附近吃饭', true)
+  instances[0].end()
+  key('keydown', 'Enter')
+  advance()
+  key('keyup', 'Enter')
+  instances[1].result('三个人', true)
+  instances[1].end()
+  assert.deepEqual(completed, ['附近吃饭', '三个人'])
+})
+
+test('busy states block new holds and a microphone rejection cancels capture before retrying', (t) => {
+  let disabled = true, starts = 0
+  const { speech, instances, pointer, captures, advance, completed } = mountHold(t, { disabled: () => disabled, onStart: () => starts++ })
+  pointer('pointerdown')
+  assert.equal(starts, 0)
+  assert.equal(instances.length, 0)
+  disabled = false
+  pointer('pointerdown')
+  instances[0].onerror({ error: 'not-allowed' })
+  assert.equal(captures.size, 0)
+  assert.equal(speech.holding.value, false)
+  assert(speech.error.value.includes('再长按'))
+  pointer('pointerdown')
+  advance()
+  pointer('pointerup')
+  instances[1].result('重新说这句', true)
+  instances[1].end()
+  assert.deepEqual(completed, ['重新说这句'])
+})
+
+test('a delayed microphone startup after release is stopped again and cannot restart recording', (t) => {
+  const { speech, instances, completed } = mountSpeech(t)
+  speech.start()
+  speech.start()
+  assert.equal(instances.length, 1)
+  assert.equal(instances[0].stopCount, undefined)
+  speech.stop()
+  instances[0].onstart()
+  assert.equal(instances[0].stopCount, 2)
+  instances[0].result('最终文字', true)
+  instances[0].end()
+  assert.deepEqual(completed, ['最终文字'])
+})
 
 test('voice-only input waits for final words after stop before completing exactly once', (t) => {
   const { speech, instances, heard, completed } = mountSpeech(t, { continuous: false })

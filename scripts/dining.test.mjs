@@ -118,36 +118,39 @@ test('unsupported speech recognition gives a retryable message without starting 
   assert.deepEqual(completed, [])
 })
 
-test('entrance runners start at their own markers, gather at the user and disappear before the reveal', () => {
-  const target = { x: 195, y: 400 }
-  for (const count of [2, 3]) {
-    for (let index = 0; index < count; index++) {
-      const start = { x: 55 + index * 125, y: 180 + index * 75 }
-      assert.equal(runnerPose(0, index, count, start, target).opacity, 0)
-      const beforeRunning = runnerPose(1150, index, count, start, target)
-      assert.equal(beforeRunning.x, start.x)
-      assert.equal(beforeRunning.y, start.y)
-      const arrived = runnerPose(3300, index, count, start, target)
-      assert(Math.abs(arrived.x - target.x) <= 53)
-      assert(Math.abs(arrived.y - target.y) <= 38)
-      assert.equal(runnerPose(GATHER_DURATION, index, count, start, target).opacity, 0)
-      for (let time = 0; time <= GATHER_DURATION; time += 25) {
-        const pose = runnerPose(time, index, count, start, target)
-        assert([pose.x, pose.y, pose.scale, pose.opacity].every(Number.isFinite))
-        assert(pose.scale >= -1e-8)
+test('entrance runners remain anchored and gather correctly across phone and tablet sizes', () => {
+  for (const width of [320, 390, 768, 1024, 1366]) {
+    const target = { x: width / 2, y: 400 }
+    const size = Math.min(1.4, Math.max(1, width / 480))
+    for (const count of [2, 3]) {
+      for (let index = 0; index < count; index++) {
+        const start = { x: width * (index + 1) / (count + 1), y: 180 + index * 75 }
+        assert.equal(runnerPose(0, index, count, start, target, size).opacity, 0)
+        const beforeRunning = runnerPose(1150, index, count, start, target, size)
+        assert.equal(beforeRunning.x, start.x)
+        assert.equal(beforeRunning.y, start.y)
+        const arrived = runnerPose(3300, index, count, start, target, size)
+        assert(Math.abs(arrived.x - target.x) <= 53 * size)
+        assert(Math.abs(arrived.y - target.y) <= 38 * size)
+        assert.equal(runnerPose(GATHER_DURATION, index, count, start, target, size).opacity, 0)
+        for (let time = 0; time <= GATHER_DURATION; time += 25) {
+          const pose = runnerPose(time, index, count, start, target, size)
+          assert([pose.x, pose.y, pose.scale, pose.opacity].every(Number.isFinite))
+          assert(pose.scale >= -1e-8)
+        }
       }
     }
   }
 })
 
-test('cloth covers the center when closed and compresses to the wings on common phone widths', () => {
+test('cloth covers the center when closed and compresses to the wings on phone and tablet widths', () => {
   const widths = [88, 124, 70, 106, 136, 80, 112, 62, 98, 130, 69]
-  for (const width of [375, 390, 430, 480]) {
+  for (const width of [320, 375, 390, 430, 480, 768, 834, 1024, 1194, 1366]) {
     const closed = curtainFolds(widths, 0, width / 2, 1)
     const closedEdge = closed.at(-1).x + closed.at(-1).width
     assert(closedEdge > width / 2)
     const open = curtainFolds(widths, 1, width / 2, 1)
-    assert(open.at(-1).x + open.at(-1).width * open.at(-1).sx < 65)
+    assert(open.at(-1).x + open.at(-1).width * open.at(-1).sx < width * .17)
     assert(open.every((fold) => fold.sx > 0 && fold.sy > 0))
   }
 })

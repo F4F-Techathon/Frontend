@@ -63,11 +63,11 @@ async function continueFlow(value: string) {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: clamp(28px, 6dvh, 60px) 28px 12px;
+    padding: clamp(20px, 5dvh, 64px) var(--inset-right) 12px var(--inset-left);
 
     .page-title {
       margin: 0;
-      font-size: 29px;
+      font-size: var(--title-size);
       text-align: center;
       span { color: var(--red); }
     }
@@ -75,31 +75,34 @@ async function continueFlow(value: string) {
     .orb-area {
       flex: 1;
       width: 100%;
-      min-height: 260px;
+      min-height: clamp(180px, 32dvh, 380px);
       display: grid;
       place-items: center;
-      padding: 28px 0;
-      .guide-orb { width: 190px; height: 190px; }
+      padding: clamp(16px, 3dvh, 36px) 0;
+      .guide-orb { width: clamp(150px, min(42vw, 25dvh), 280px); height: auto; aspect-ratio: 1; }
     }
 
     .heard-area {
-      min-height: 104px;
+      min-height: clamp(72px, 12dvh, 128px);
       width: 100%;
-      max-width: 340px;
+      max-width: 560px;
       text-align: center;
       p { margin: 0; line-height: 1.9; overflow-wrap: anywhere; }
-      .heard-text { font-size: 18px; color: #665365; }
-      .listening-hint { font-size: 15px; color: var(--muted); }
-      .speech-error { font-size: 13px; color: var(--red); }
+      .heard-text { font-size: clamp(18px, 2.4vw, 24px); color: #665365; }
+      .listening-hint { font-size: var(--body-size); color: var(--muted); }
+      .speech-error { font-size: var(--label-size); color: var(--red); }
     }
   }
 
   .voice-action {
-    padding: 20px 28px calc(32px + env(safe-area-inset-bottom));
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 20px var(--inset-right) calc(clamp(20px, 4dvh, 40px) + env(safe-area-inset-bottom)) var(--inset-left);
 
     .voice-button {
-      min-height: 60px;
-      font-size: 16px;
+      min-height: var(--control-height);
+      font-size: clamp(16px, 1.8vw, 19px);
       background: var(--gold);
       border-color: #dca64a;
       box-shadow: 0 4px 0 #c28e32, 0 9px 24px #b0893d1c;

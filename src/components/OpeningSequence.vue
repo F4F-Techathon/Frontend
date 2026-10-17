@@ -74,6 +74,8 @@ function renderGathering(time: number) {
   const scene = entrance.scene
   if (!scene || !container.value) return
   const rect = container.value.getBoundingClientRect()
+  const size = clamp(rect.width / 480, 1, 1.4)
+  container.value.style.setProperty('--runner-scale', String(size))
   const anchors = scene.anchors()
   const target = { x: anchors.target.x - rect.left, y: anchors.target.y - rect.top }
   const count = scene.actors.length
@@ -81,7 +83,7 @@ function renderGathering(time: number) {
   scene.actors.forEach((_, index) => {
     const anchor = anchors.starts[index] || anchors.target
     const start = { x: anchor.x - rect.left, y: anchor.y - rect.top }
-    const pose = runnerPose(time, index, count, start, target)
+    const pose = runnerPose(time, index, count, start, target, size)
     const runner = runners[index]
     if (runner) {
       runner.style.transform = `translate(${pose.x.toFixed(2)}px, ${pose.y.toFixed(2)}px) translate(-50%, -95%) scale(${pose.scale.toFixed(4)})`
@@ -100,7 +102,7 @@ function renderGathering(time: number) {
     const age = (time - emitted) / 500
     if (age < 0 || age > 1) { el.style.opacity = '0'; continue }
     const anchor = anchors.starts[particle.actor] || anchors.target
-    const pose = runnerPose(emitted, particle.actor, count, { x: anchor.x - rect.left, y: anchor.y - rect.top }, target)
+    const pose = runnerPose(emitted, particle.actor, count, { x: anchor.x - rect.left, y: anchor.y - rect.top }, target, size)
     el.style.transform = `translate(${pose.x}px, ${pose.y - age * 12}px) scale(${.4 + age})`
     el.style.opacity = String((1 - age) * .5)
   }
@@ -166,7 +168,7 @@ onBeforeUnmount(() => {
   top: 0;
   bottom: 0;
   left: 50%;
-  width: min(100%, 480px);
+  width: min(100%, var(--app-max-width));
   transform: translateX(-50%);
   overflow: hidden;
   isolation: isolate;
@@ -185,8 +187,8 @@ onBeforeUnmount(() => {
     position: absolute;
     top: 0;
     left: 0;
-    width: 69px;
-    height: 105px;
+    width: calc(69px * var(--runner-scale, 1));
+    height: calc(105px * var(--runner-scale, 1));
     opacity: 0;
     transform-origin: 50% 95%;
     will-change: transform, opacity;
@@ -211,9 +213,9 @@ onBeforeUnmount(() => {
 
     .arrival-ring {
       position: absolute;
-      width: 108px;
-      height: 38px;
-      left: -54px;
+      width: calc(108px * var(--runner-scale, 1));
+      height: calc(38px * var(--runner-scale, 1));
+      left: calc(-54px * var(--runner-scale, 1));
       top: -5px;
       border: 1px solid #b58b47;
       border-radius: 50%;
@@ -224,8 +226,8 @@ onBeforeUnmount(() => {
 
     svg {
       position: absolute;
-      width: 90px;
-      height: 99px;
+      width: calc(90px * var(--runner-scale, 1));
+      height: calc(99px * var(--runner-scale, 1));
       opacity: 0;
       transform-origin: 50% 85%;
       filter: drop-shadow(0 4px 3px #2b1b301a);
@@ -272,14 +274,14 @@ onBeforeUnmount(() => {
   .skip-button {
     position: absolute;
     top: calc(18px + env(safe-area-inset-top));
-    right: 18px;
+    right: var(--inset-right);
     z-index: 10001;
     border: 1px solid #a38aab66;
     border-radius: 30px;
     background: #fffbf4d9;
     color: #6c536e;
     padding: 9px 16px;
-    font-size: 12px;
+    font-size: var(--label-size);
 
     &:disabled { opacity: .5; }
   }

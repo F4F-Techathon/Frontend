@@ -79,7 +79,7 @@ onBeforeUnmount(() => observer?.disconnect())
     top: -25px;
     left: -2%;
     width: 104%;
-    height: 58px;
+    height: clamp(58px, 8vw, 80px);
     background: repeating-linear-gradient(90deg, #653859 0, #89506c 16px, #563051 30px);
     border-radius: 0 0 35% 35%;
     border-bottom: 3px solid #b89458;

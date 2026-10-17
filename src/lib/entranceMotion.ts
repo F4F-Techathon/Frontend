@@ -22,7 +22,7 @@ export function easeOutBack(value: number) {
 }
 
 // Curved screen-space paths are a theatrical gathering, not a claimed navigation route.
-export function runnerPose(time: number, index: number, count: number, start: ScreenPoint, target: ScreenPoint) {
+export function runnerPose(time: number, index: number, count: number, start: ScreenPoint, target: ScreenPoint, size = 1) {
   const popTime = 380 + index * 140
   const runTime = 1250 + index * 110
   const arrivalTime = 2980 + index * 90
@@ -30,16 +30,16 @@ export function runnerPose(time: number, index: number, count: number, start: Sc
   const running = segment(time, runTime, arrivalTime)
   const k = easeInOut(running)
   const slot = index - (count - 1) / 2
-  const destination = { x: target.x + slot * 52, y: target.y + 18 + Math.abs(slot) * 9 }
-  const bend = (index % 2 ? 1 : -1) * Math.min(55, Math.abs(destination.y - start.y) * .3 + 20)
+  const destination = { x: target.x + slot * 52 * size, y: target.y + (18 + Math.abs(slot) * 9) * size }
+  const bend = (index % 2 ? 1 : -1) * Math.min(55 * size, Math.abs(destination.y - start.y) * .3 + 20 * size)
   const x = start.x + (destination.x - start.x) * k + Math.sin(Math.PI * k) * bend
-  const y = start.y + (destination.y - start.y) * k - Math.sin(Math.PI * pop) * 25
+  const y = start.y + (destination.y - start.y) * k - Math.sin(Math.PI * pop) * 25 * size
   const landing = segment(time, arrivalTime, arrivalTime + 350)
   const enter = easeInOut(segment(time, 3520 + index * 65, 3950 + index * 65))
   const scale = (time < popTime ? 0 : easeOutBack(pop)) * (1 - enter * .86)
   return {
     x: x + (target.x - x) * enter,
-    y: y + (target.y - y) * enter - Math.sin(landing * Math.PI) * 9 - Math.sin(enter * Math.PI) * 22,
+    y: y + (target.y - y) * enter - Math.sin(landing * Math.PI) * 9 * size - Math.sin(enter * Math.PI) * 22 * size,
     scale,
     opacity: time < popTime ? 0 : 1 - enter,
     direction: (destination.x >= start.x ? 1 : -1) as 1 | -1,

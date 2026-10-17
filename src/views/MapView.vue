@@ -49,7 +49,6 @@ function start() {
   if (store.selected.length < 2 || entrance.active || !page.value) return
   const actors = [...store.selected]
   const rect = page.value.getBoundingClientRect()
-  const target = { x: rect.left + rect.width / 2, y: rect.top + rect.height * .51 }
   const starts = actors.map((r, index) => {
     const avatar = page.value!.querySelector<HTMLElement>(`[data-contestant-id="${r.id}"] .avatar`)
     const box = avatar?.getBoundingClientRect()
@@ -60,10 +59,19 @@ function start() {
   entrance.begin({
     actors,
     mapAvailable,
-    anchors: () => ({
-      starts: actors.map((r, i) => (mapAvailable ? mapView.value?.project(r.coordinates) : undefined) || starts[i]!),
-      target: (mapAvailable ? mapView.value?.project(store.filters.center) : undefined) || target,
-    }),
+    anchors: () => {
+      const current = page.value?.getBoundingClientRect() || rect
+      return {
+        starts: actors.map((r, i) => (mapAvailable ? mapView.value?.project(r.coordinates) : undefined) || {
+          x: current.left + (starts[i]!.x - rect.left) / rect.width * current.width,
+          y: current.top + (starts[i]!.y - rect.top) / rect.height * current.height,
+        }),
+        target: (mapAvailable ? mapView.value?.project(store.filters.center) : undefined) || {
+          x: current.left + current.width / 2,
+          y: current.top + current.height * .51,
+        },
+      }
+    },
     focusTarget: () => { if (mapAvailable) mapView.value?.focusTarget() },
   })
   void import('@/views/DebateView.vue')
@@ -81,5 +89,32 @@ function start() {
     .selection-dock { transform: translateY(110%); opacity: 0; pointer-events: none; }
     .area-button, .locate-map, .fallback-button { opacity: 0; pointer-events: none; }
   }
-  height: 100dvh; min-height: 650px; display: flex; flex-direction: column; overflow: hidden; .map-header { background: var(--cream); z-index: 2; box-shadow: 0 4px 15px #2b1b3008; .filter-icon { border: 1px solid var(--line); width: 37px; height: 37px; } .map-summary { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font-size: 12px; >span { color: #827968; max-width: 75%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; b { color: var(--green); font: 500 19px var(--font-round); margin-right: 3px; } i { margin: 0 5px; font-style: normal; } } .text-btn { display: flex; gap: 4px; font-size: 10px; } } .condition-scroll { display: flex; gap: 6px; padding: 10px 20px 14px; overflow-x: auto; scrollbar-width: none; .chip { white-space: nowrap; font-size: 12px; padding: 6px 10px; } } } .map-region { position: absolute; inset: 0; z-index: 0; overflow: hidden; .area-button { position: absolute; top: calc(var(--map-header) + 15px); left: 50%; transform: translateX(-50%); background: var(--paper); border: 1px solid #d6cdb5; box-shadow: 0 3px 8px #2b1b3012; border-radius: 50px; display: flex; align-items: center; gap: 7px; padding: 9px 13px; font-size: 10px; white-space: nowrap; } .locate-map { position: absolute; bottom: calc(var(--map-dock) + 30px); left: 15px; background: var(--paper); border: 1px solid #d3cbb7; border-radius: 12px; box-shadow: 0 3px 8px #2b1b3015; } .map-list { position: absolute; top: var(--map-header); bottom: calc(var(--map-dock) - 14px); left: 0; right: 0; overflow-y: auto; padding: 14px 17px; background: #ede8dd; display: flex; flex-direction: column; gap: 9px; .list-note { color: var(--muted); font-size: 11px; margin: 1px 0 6px; } } .fallback-button { position: absolute; bottom: calc(var(--map-dock) + 35px); left: 20px; right: 20px; .btn { font-size: 12px; min-height: 46px; } } } .selection-dock { position: relative; z-index: 3; padding: 10px 20px calc(12px + env(safe-area-inset-bottom)); background: var(--paper); border-radius: 25px 25px 0 0; margin-top: auto; box-shadow: 0 -8px 30px #2b1b3015; .dock-handle { width: 30px; height: 3px; background: #d5cbbb; border-radius: 5px; margin: 0 auto 13px; } .dock-heading { display: flex; align-items: center; justify-content: space-between;  h2 { font-size: 17px; margin: 4px 0; span { color: #9c886d; font: 500 14px var(--font-round); margin-left: 7px; } } .text-btn { display: flex; gap: 5px; align-items: center; font-size: 10px; } }  .contestants { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 10px 0 19px; .contestant { text-align: center; position: relative; .avatar { width: 58px; height: 58px; border-radius: 50%; margin: 0 auto 7px; border: 1px solid #e6d9c7; padding: 0; display: block; } b { display: block; font-size: 12px; } >span { font-size: 11px; color: var(--muted); display: block; margin-top: 4px; } .remove { position: absolute; right: calc(50% - 36px); top: 0; z-index: 2; display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--line); border-radius: 50%; background: var(--paper); } } .empty-slot { border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 10px; i { width: 58px; height: 58px; display: grid; place-items: center; border: 1px dashed #cbbca6; border-radius: 50%; color: #b9a68e; } span { font-size: 10px; color: #a18f78; } } }  } .map-preview { >p { font-size: 13px; line-height: 1.8; } .btn { margin-top: 20px; } } }
+  height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; .map-header { flex-shrink: 0; background: var(--cream); z-index: 2; box-shadow: 0 4px 15px #2b1b3008; .filter-icon { border: 1px solid var(--line); width: 37px; height: 37px; } .map-summary { display: flex; align-items: center; justify-content: space-between; padding: 0 var(--inset-right) 0 var(--inset-left); font-size: var(--label-size); >span { color: #827968; max-width: 75%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; b { color: var(--green); font: 500 19px var(--font-round); margin-right: 3px; } i { margin: 0 5px; font-style: normal; } } .text-btn { display: flex; gap: 4px; font-size: var(--small-size); } } .condition-scroll { display: flex; gap: 6px; padding: 10px var(--inset-right) 14px var(--inset-left); overflow-x: auto; scrollbar-width: none; .chip { flex: 0 0 auto; white-space: nowrap; font-size: var(--label-size); padding: 6px 10px; } } } .map-region { position: absolute; inset: 0; z-index: 0; overflow: hidden; .area-button { position: absolute; top: calc(var(--map-header) + 15px); left: 50%; transform: translateX(-50%); background: var(--paper); border: 1px solid #d6cdb5; box-shadow: 0 3px 8px #2b1b3012; border-radius: 50px; display: flex; align-items: center; gap: 7px; padding: 9px 13px; font-size: var(--small-size); white-space: nowrap; } .locate-map { position: absolute; bottom: calc(var(--map-dock) + 30px); left: var(--inset-left); background: var(--paper); border: 1px solid #d3cbb7; border-radius: 12px; box-shadow: 0 3px 8px #2b1b3015; } .map-list { position: absolute; top: var(--map-header); bottom: calc(var(--map-dock) - 14px); left: 0; right: 0; overflow-y: auto; padding: 14px var(--inset-right) 14px var(--inset-left); background: #ede8dd; display: flex; flex-direction: column; gap: 9px; .list-note { color: var(--muted); font-size: var(--small-size); margin: 1px 0 6px; } } .fallback-button { position: absolute; bottom: calc(var(--map-dock) + 35px); left: var(--inset-left); right: var(--inset-right); .btn { font-size: var(--label-size); min-height: 46px; } } } .selection-dock { >.btn { max-width: var(--content-width); margin-inline: auto; } position: relative; z-index: 3; flex-shrink: 0; max-height: 52dvh; overflow-y: auto; overscroll-behavior: contain; padding: 10px var(--inset-right) calc(12px + env(safe-area-inset-bottom)) var(--inset-left); background: var(--paper); border-radius: 25px 25px 0 0; margin-top: auto; box-shadow: 0 -8px 30px #2b1b3015; .dock-handle { width: 30px; height: 3px; background: #d5cbbb; border-radius: 5px; margin: 0 auto 13px; } .dock-heading { width: 100%; max-width: var(--content-width); margin-inline: auto; display: flex; align-items: center; justify-content: space-between;  h2 { font-size: clamp(17px, 2.2vw, 24px); margin: 4px 0; span { color: #9c886d; font: 500 14px var(--font-round); margin-left: 7px; } } .text-btn { display: flex; gap: 5px; align-items: center; font-size: var(--small-size); } }  .contestants { width: 100%; max-width: 720px; margin-inline: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-block: 10px 19px; .contestant { text-align: center; position: relative; .avatar { width: clamp(58px, 9vw, 84px); height: clamp(58px, 9vw, 84px); border-radius: 50%; margin: 0 auto 7px; border: 1px solid #e6d9c7; padding: 0; display: block; } b { display: block; font-size: var(--label-size); } >span { font-size: var(--small-size); color: var(--muted); display: block; margin-top: 4px; } .remove { position: absolute; right: calc(50% - clamp(29px, 4.5vw, 42px) - 7px); top: 0; z-index: 2; display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--line); border-radius: 50%; background: var(--paper); } } .empty-slot { border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 10px; i { width: clamp(58px, 9vw, 84px); height: clamp(58px, 9vw, 84px); display: grid; place-items: center; border: 1px dashed #cbbca6; border-radius: 50%; color: #b9a68e; } span { font-size: var(--small-size); color: #a18f78; } } }  } .map-preview { >p { font-size: 13px; line-height: 1.8; } .btn { margin-top: 20px; } }
+
+  @media (max-height: 600px) {
+    .map-header {
+      :deep(.nav-header) { min-height: 56px; padding-top: max(6px, env(safe-area-inset-top)); padding-bottom: 6px; }
+      .condition-scroll { padding-top: 6px; padding-bottom: 6px; }
+    }
+    .selection-dock {
+      padding-top: 6px;
+      .dock-handle { display: none; }
+      .dock-heading { h2 { font-size: 15px; } }
+      .contestants {
+        margin-block: 6px 10px;
+        .contestant {
+          .avatar { width: 40px; height: 40px; margin-bottom: 4px; }
+          .remove { right: calc(50% - 28px); }
+          b { font-size: 11px; }
+          >span { display: none; }
+        }
+        .empty-slot {
+          i { width: 40px; height: 40px; }
+          span { display: none; }
+        }
+      }
+      >.btn { min-height: 44px; padding-block: 10px; }
+    }
+  }
+}
 </style>

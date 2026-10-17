@@ -595,18 +595,21 @@
     this.talks.push({ t: t, id: lineId, data: {}[lineId], opts: opts || {} });
     return this;
   };
+  // Capture the current blend so a new cue can interrupt it without snapping to its old target.
   Actor.prototype.e = function (t, name) {
-    this.expr.push([t, name]);
+    var previous = this.state(t);
+    previous.talk = previous.talkScale;
+    this.expr.push([t, name, previous]);
     sortRows(this.expr);
     return this;
   };
   Actor.prototype.p = function (t, name, dur) {
-    this.pose.push([t, name, dur || 0.3]);
+    this.pose.push([t, name, dur || 0.3, this.state(t).arms]);
     sortRows(this.pose);
     return this;
   };
   Actor.prototype.look = function (t, x, y) {
-    this.looks.push([t, { x: x, y: y }]);
+    this.looks.push([t, { x: x, y: y }, this.state(t).look]);
     sortRows(this.looks);
     return this;
   };
@@ -621,6 +624,13 @@
   // run: [t0, t1] with leg cycle; move: keyframe positions in container px
   Actor.prototype.run = function (t0, t1, rate) {
     this.runs.push([t0, t1, rate || 3.2]);
+    return this;
+  };
+
+  // Let the final stride settle instead of replacing the actor at the end of a run.
+  Actor.prototype.stopRun = function (t) {
+    var run = this.runs[this.runs.length - 1];
+    if (run && run[1] === Infinity) run[1] = t + 0.24;
     return this;
   };
 
@@ -648,9 +658,9 @@
     // ---- expression blend
     var ei = lastBefore(this.expr, t);
     var cur = EXPR[this.expr[ei][1]] || EXPR.idle;
-    var prev = ei > 0 ? EXPR[this.expr[ei - 1][1]] || EXPR.idle : cur;
+    var prev = this.expr[ei][2] || (ei > 0 ? EXPR[this.expr[ei - 1][1]] || EXPR.idle : cur);
     var since = t - this.expr[ei][0];
-    var k = ei > 0 ? easeIO(clamp(since / 0.22, 0, 1)) : 1;
+    var k = ei > 0 ? easeIO(clamp(since / 0.38, 0, 1)) : 1;
     var A = prev, B = cur;
     var st = {};
     st.brow = [0, 1, 2, 3].map(function (i) {
@@ -668,16 +678,17 @@
     st.talkScale = lerp(A.talk || 1, B.talk || 1, k);
     // squash pulse on change
     var pulse = 0;
-    if (ei > 0 && since < 0.34) {
+    if (ei > 0 && (this.expr[ei][1] === "win" || this.expr[ei][1] === "shock") && since < 0.34) {
       var p = since / 0.34;
       pulse = Math.sin(p * Math.PI) * (p < 0.45 ? -1 : 0.55) * (1 - p * 0.4);
     }
     // ---- look
     var li = lastBefore(this.looks, t);
-    var L1 = this.looks[li][1], L0 = li > 0 ? this.looks[li - 1][1] : L1;
-    var lk = li > 0 ? easeIO(clamp((t - this.looks[li][0]) / 0.25, 0, 1)) : 1;
+    var L1 = this.looks[li][1], L0 = this.looks[li][2] || (li > 0 ? this.looks[li - 1][1] : L1);
+    var lk = li > 0 ? easeIO(clamp((t - this.looks[li][0]) / 0.5, 0, 1)) : 1;
     var look = { x: lerp(L0.x, L1.x, lk), y: lerp(L0.y, L1.y, lk) };
-    if (B.look && k >= 0.5) look = { x: lerp(look.x, B.look.x, clamp((k - 0.5) * 2, 0, 1)), y: lerp(look.y, B.look.y, clamp((k - 0.5) * 2, 0, 1)) };
+    var lookFrom = A.look || look, lookTo = B.look || look;
+    look = { x: lerp(lookFrom.x, lookTo.x, k), y: lerp(lookFrom.y, lookTo.y, k) };
     st.look = look;
     st.fs = look.x * 9;
     // ---- blink
@@ -722,7 +733,7 @@
     // ---- arms
     var pi = lastBefore(this.pose, t);
     var P1 = POSES[this.pose[pi][1]] || POSES.rest;
-    var P0 = pi > 0 ? POSES[this.pose[pi - 1][1]] || POSES.rest : P1;
+    var P0 = this.pose[pi][3] || (pi > 0 ? POSES[this.pose[pi - 1][1]] || POSES.rest : P1);
     var pd = this.pose[pi][2] || 0.3;
     var pk = pi > 0 ? clamp((t - this.pose[pi][0]) / pd, 0, 1) : 1;
     var pke = pk < 1 ? easeOutBack(pk) : 1;
@@ -745,15 +756,14 @@
       var R = this.runs[ri];
       if (t >= R[0] && t <= R[1]) {
         var ph = (t - R[0]) * R[2] * Math.PI * 2;
-        var fade = clamp(Math.min(t - R[0], R[1] - t) / 0.12, 0, 1);
+        var fade = easeIO(clamp(Math.min((t - R[0]) / 0.2, (R[1] - t) / 0.24), 0, 1));
         st.legL = Math.sin(ph) * 32 * fade;
         st.legR = -Math.sin(ph) * 32 * fade;
         st.by += -Math.abs(Math.sin(ph)) * 16 * fade;
         st.lean += 6 * fade;
-        st.arms = [
-          [24 + Math.sin(ph) * 30 * fade, -70, "fist", 0],
-          [24 - Math.sin(ph) * 30 * fade, -70, "fist", 0],
-        ];
+        st.arms = st.arms.map(function (arm, side) {
+          return [lerp(arm[0], 24 + Math.sin(ph) * 30 * (side ? -1 : 1), fade), lerp(arm[1], -70, fade), fade > 0.5 ? "fist" : arm[2], arm[3]];
+        });
       }
     }
     // ---- actions

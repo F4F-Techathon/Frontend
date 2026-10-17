@@ -1,9 +1,9 @@
 <template>
-  <section class="input-page">
-    <NavHeader title="说说你的想法" :step="1" @back="router.push('/')" />
+  <section class="input-page" :class="{ 'is-departing': pickerArrival.active }">
+    <NavHeader title="说说你的想法" @back="router.push('/')" />
     <div class="input-content">
       <h2 class="page-title">今晚想吃点什么<span>？</span></h2>
-      <div class="orb-area"><GuideOrb :listening="speech.listening.value" /></div>
+      <div class="orb-area"><div class="orb-anchor" data-guide-orb-anchor="input" aria-hidden="true"></div></div>
       <div class="heard-area" aria-live="polite" aria-atomic="true">
         <p v-if="speech.error.value" class="speech-error">{{ speech.error.value }}</p>
         <p v-else-if="text" class="heard-text">{{ text }}</p>
@@ -23,17 +23,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDiningStore } from '@/stores/dining'
+import { usePickerArrivalStore } from '@/stores/pickerArrival'
 import { useSpeechInput } from '@/composables/useSpeechInput'
 import NavHeader from '@/components/NavHeader.vue'
 import AppIcon from '@/components/AppIcon.vue'
-import GuideOrb from '@/components/GuideOrb.vue'
 
 const router = useRouter(), store = useDiningStore()
+const pickerArrival = usePickerArrivalStore()
 const text = ref(''), processing = ref(false)
 const speech = useSpeechInput((value) => { text.value = value }, { continuous: false, onComplete: continueFlow })
+watch(speech.listening, (value) => { pickerArrival.listening = value }, { immediate: true, flush: 'sync' })
+onBeforeUnmount(() => { pickerArrival.listening = false })
 
 // One button starts listening or asks recognition to finish its last words.
 function toggleSpeech() {
@@ -47,7 +50,8 @@ async function continueFlow(value: string) {
   text.value = value
   processing.value = true
   store.understand(value)
-  try { await router.push('/filter') }
+  try { await router.push('/pick') }
+  catch { pickerArrival.finish(); store.notify('候场暂时没打开，再试一次吧') }
   finally { processing.value = false }
 }
 </script>
@@ -58,6 +62,10 @@ async function continueFlow(value: string) {
   display: flex;
   flex-direction: column;
 
+  :deep(.nav-header), .page-title, .heard-area, .voice-action {
+    transition: opacity .22s ease, transform .3s cubic-bezier(.22, .61, .36, 1);
+  }
+
   .input-content {
     flex: 1;
     display: flex;
@@ -67,7 +75,6 @@ async function continueFlow(value: string) {
 
     .page-title {
       margin: 0;
-      font-size: var(--title-size);
       text-align: center;
       span { color: var(--red); }
     }
@@ -79,7 +86,7 @@ async function continueFlow(value: string) {
       display: grid;
       place-items: center;
       padding: clamp(16px, 3dvh, 36px) 0;
-      .guide-orb { width: clamp(150px, min(42vw, 25dvh), 280px); height: auto; aspect-ratio: 1; }
+      .orb-anchor { width: clamp(150px, min(42vw, 25dvh), 280px); aspect-ratio: 1; }
     }
 
     .heard-area {
@@ -87,11 +94,16 @@ async function continueFlow(value: string) {
       width: 100%;
       max-width: 560px;
       text-align: center;
-      p { margin: 0; line-height: 1.9; overflow-wrap: anywhere; }
-      .heard-text { font-size: clamp(18px, 2.4vw, 24px); color: #665365; }
+      p { margin: 0; line-height: var(--line-body); overflow-wrap: anywhere; }
+      .heard-text { font-size: var(--heading-size); color: #665365; }
       .listening-hint { font-size: var(--body-size); color: var(--muted); }
       .speech-error { font-size: var(--label-size); color: var(--red); }
     }
+  }
+
+  &.is-departing {
+    :deep(.nav-header), .page-title, .heard-area { opacity: 0; transform: translateY(-8px); }
+    .voice-action { opacity: 0; transform: translateY(14px); }
   }
 
   .voice-action {
@@ -102,7 +114,6 @@ async function continueFlow(value: string) {
 
     .voice-button {
       min-height: var(--control-height);
-      font-size: clamp(16px, 1.8vw, 19px);
       background: var(--gold);
       border-color: #dca64a;
       box-shadow: 0 4px 0 #c28e32, 0 9px 24px #b0893d1c;

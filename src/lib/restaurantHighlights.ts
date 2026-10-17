@@ -1,10 +1,10 @@
 import type { Filters, Restaurant } from '@/data/types'
 import { distanceKm } from './filtering'
-export interface RecommendationReason { icon: string; title: string; description: string; evidenceIds: string[] }
+export interface RestaurantHighlight { icon: string; title: string; description: string; evidenceIds: string[] }
 
-// Every recommendation reason refers to known data and carries its own source IDs.
-export function recommendationReasons(r: Restaurant, f: Filters): RecommendationReason[] {
-  const reasons: RecommendationReason[] = []
+// Merchant highlights describe known facts and carry their source IDs.
+export function restaurantHighlights(r: Restaurant, f: Filters): RestaurantHighlight[] {
+  const reasons: RestaurantHighlight[] = []
   if (r.price !== null) reasons.push({ icon: 'ticket', title: f.maxBudget ? '符合预算' : '价格参考', description: `参考人均 ¥${r.price}${f.maxBudget ? `，在 ¥${f.maxBudget} 的预算内` : '，以实际点单为准'}。`, evidenceIds: [r.evidenceIds[0]!] })
   if (f.quiet && r.quiet === true) reasons.push({ icon: 'leaf', title: '环境更适合慢聊', description: '评价中提到环境适合聊天。', evidenceIds: [r.evidenceIds[1]!] })
   else if (f.scene && r.scenes.includes(f.scene)) reasons.push({ icon: 'heart', title: `适合${f.scene}`, description: `${r.tags[0]}，符合这次用餐的氛围。`, evidenceIds: [r.evidenceIds[0]!, r.evidenceIds[1]!] })

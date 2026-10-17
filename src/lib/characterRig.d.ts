@@ -3,9 +3,10 @@ interface VisualState { mouth: string; open: number; tilt: number; [key: string]
 interface Rig { svg: SVGSVGElement; render(state: VisualState): void }
 interface Actor {
   e(t: number, expression: string): Actor
-  p(t: number, pose: string): Actor
+  p(t: number, pose: string, duration?: number): Actor
   look(t: number, x: number, y: number): Actor
   run(start: number, end: number, rate?: number): Actor
+  stopRun(t: number): Actor
   act(t: number, name: string, duration?: number, amplitude?: number): Actor
   state(t: number): VisualState
 }

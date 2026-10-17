@@ -21,7 +21,8 @@ const props = withDefaults(defineProps<{
   portrait?: boolean
   motion?: 'idle' | 'run' | 'hop'
   direction?: 1 | -1
-}>(), { state: 'idle', portrait: false, motion: 'idle', direction: 1 })
+  lookX?: number
+}>(), { state: 'idle', portrait: false, motion: 'idle', direction: 1, lookX: 0 })
 
 const container = ref<HTMLElement>()
 const id = `actor-${useId().replace(/[^a-z0-9]/gi, '')}`
@@ -34,48 +35,81 @@ let raf = 0
 let visible = true
 let origin = 0
 let expression = 'idle'
+let pose = 'rest'
+let motion = 'idle'
+let settledTime = 1
+let talk = 0
+let lastFrame = 0
 let observer: IntersectionObserver | undefined
 
-// Expression changes blend through the original rig; running uses its arm and leg cycles.
+// One actor keeps its breathing and blink clock while expressions and gestures blend in place.
 function updateActor() {
-  if (!rig) return
-  origin = performance.now() / 1000
-  actor = new RIG.Actor(rig, {
-    seed: props.character === 'rong' ? 1 : props.character === 'hua' ? 3 : 5,
-    expr: expression,
-  })
-  expression = expressions[props.state]
-  actor.e(.01, expression)
-  actor.p(.01, props.motion === 'run' ? 'run' : props.state === 'happy' ? 'cheer' : props.state === 'speaking' ? 'present' : props.state === 'disagree' ? 'hip' : 'rest')
-  if (props.motion === 'run') actor.run(0, Number.POSITIVE_INFINITY, 3.4)
-  if (props.motion === 'hop') actor.act(.02, 'hop', .42)
+  if (!actor) return
+  const t = performance.now() / 1000 - origin
+  const nextMotion = reducedMotion.matches ? 'idle' : props.motion
+  const nextExpression = expressions[props.state]
+  const nextPose = nextMotion === 'run' ? 'run' : props.state === 'happy' ? 'cheer' : props.state === 'speaking' ? 'present' : props.state === 'disagree' ? 'hip' : 'rest'
+  if (nextExpression !== expression) actor.e(t, nextExpression)
+  if (nextPose !== pose) actor.p(t, nextPose, .65)
+  if (nextMotion !== motion) {
+    if (motion === 'run') actor.stopRun(t)
+    if (nextMotion === 'run') actor.run(t, Number.POSITIVE_INFINITY, 3.1)
+    if (nextMotion === 'hop') actor.act(t, 'hop', .5)
+  }
+  expression = nextExpression
+  pose = nextPose
+  motion = nextMotion
+  settledTime = t + 1
+}
+
+// Gaze changes have their own blend and never restart a listener's expression or pose.
+function updateGaze() {
+  if (!actor) return
+  const t = performance.now() / 1000 - origin
+  actor.look(t, props.lookX, 0)
+  settledTime = t + 1
 }
 
 // Offscreen characters avoid SVG writes, and every animation frame is released on unmount.
 function animate(time: number) {
   if (visible && actor) {
-    const t = reducedMotion.matches ? 1 : Math.max(0, time / 1000 - origin)
+    const t = reducedMotion.matches ? settledTime : Math.max(0, time / 1000 - origin)
     const state = actor.state(t)
-    if (props.state === 'speaking') {
+    const speaking = !reducedMotion.matches && (props.state === 'speaking' || props.state === 'disagree')
+    const dt = lastFrame ? Math.min(time - lastFrame, 80) : 16
+    talk += ((speaking ? 1 : 0) - talk) * (1 - Math.exp(-dt / 130))
+    if (!reducedMotion.matches && talk > .025) {
       state.mouth = `v${Math.floor(t * 9) % 6 + 1}`
-      state.open = .3 + Math.abs(Math.sin(t * 11)) * .65
+      state.open = (.3 + Math.abs(Math.sin(t * 11)) * .65) * talk
     }
     rig.render(state)
   }
+  lastFrame = time
   raf = requestAnimationFrame(animate)
 }
 
 watch(() => [props.state, props.motion], updateActor)
+watch(() => props.lookX, updateGaze)
 onMounted(() => {
   rig = RIG.create(container.value!, props.character, id, {
     viewBox: props.portrait ? '-175 -565 350 350' : '-210 -610 420 640',
   })
+  origin = performance.now() / 1000
+  actor = new RIG.Actor(rig, {
+    seed: Array.from(props.name || props.character).reduce((seed, letter) => (seed + letter.charCodeAt(0)) % 7, 0),
+  })
   updateActor()
+  updateGaze()
   observer = new IntersectionObserver(([entry]) => { visible = !!entry?.isIntersecting })
   observer.observe(container.value!)
+  reducedMotion.addEventListener('change', updateActor)
   raf = requestAnimationFrame(animate)
 })
-onBeforeUnmount(() => { cancelAnimationFrame(raf); observer?.disconnect() })
+onBeforeUnmount(() => {
+  cancelAnimationFrame(raf)
+  observer?.disconnect()
+  reducedMotion.removeEventListener('change', updateActor)
+})
 </script>
 
 <style lang="less" scoped>
@@ -90,6 +124,7 @@ onBeforeUnmount(() => { cancelAnimationFrame(raf); observer?.disconnect() })
     height: 100%;
     overflow: visible;
     transform: scaleX(var(--facing, 1));
+    transition: transform .45s cubic-bezier(.4, 0, .2, 1);
   }
 
   &.portrait {

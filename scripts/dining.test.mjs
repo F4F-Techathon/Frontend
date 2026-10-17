@@ -21,9 +21,19 @@ const { restaurants, evidence, defaultFilters } = await server.ssrLoadModule('/s
 const { matchesFilters, parseRequirements } = await server.ssrLoadModule('/src/lib/filtering.ts')
 const { createDebate } = await server.ssrLoadModule('/src/data/debate.ts')
 const { useDiningStore } = await server.ssrLoadModule('/src/stores/dining.ts')
-const { runnerPose, curtainFolds, GATHER_DURATION } = await server.ssrLoadModule('/src/lib/entranceMotion.ts')
+const { runnerPose, contestantReveal, venuePose, curtainFolds, GATHER_DURATION, STAGE_HANDOFF_START } = await server.ssrLoadModule('/src/lib/entranceMotion.ts')
 const { useEntranceStore } = await server.ssrLoadModule('/src/stores/entrance.ts')
 const { useSpeechInput } = await server.ssrLoadModule('/src/composables/useSpeechInput.ts')
+const { stageSlots } = await server.ssrLoadModule('/src/lib/stageLayout.ts')
+const { RIG } = await server.ssrLoadModule('/src/lib/characterRig.js')
+const { cardStackPose, swipeDirection, VISIBLE_STACK_CARDS } = await server.ssrLoadModule('/src/lib/swipeMotion.ts')
+const { orbAnchorFrame, pickerArrivalProgress, PICKER_ARRIVAL_DURATION } = await server.ssrLoadModule('/src/lib/pickerArrivalMotion.ts')
+const { usePickerArrivalStore } = await server.ssrLoadModule('/src/stores/pickerArrival.ts')
+
+// Exercises the same explicit invitations used by the swipe UI instead of auto-filling a cast.
+function inviteRestaurants(store, count) {
+  for (let index = 0; index < count; index++) assert(store.swipeRestaurant(store.swipeCandidates[0].id, true))
+}
 
 // A component lifecycle and a fake recognition service exercise event ordering without a browser.
 function mountSpeech(t, options = {}, supported = true) {
@@ -122,16 +132,16 @@ test('entrance runners remain anchored and gather correctly across phone and tab
   for (const width of [320, 390, 768, 1024, 1366]) {
     const target = { x: width / 2, y: 400 }
     const size = Math.min(1.4, Math.max(1, width / 480))
-    for (const count of [2, 3]) {
+    for (const count of [2, 3, 4, 5]) {
       for (let index = 0; index < count; index++) {
         const start = { x: width * (index + 1) / (count + 1), y: 180 + index * 75 }
         assert.equal(runnerPose(0, index, count, start, target, size).opacity, 0)
-        const beforeRunning = runnerPose(1150, index, count, start, target, size)
+        const beforeRunning = runnerPose(1540 + index * 110, index, count, start, target, size)
         assert.equal(beforeRunning.x, start.x)
         assert.equal(beforeRunning.y, start.y)
-        const arrived = runnerPose(3300, index, count, start, target, size)
-        assert(Math.abs(arrived.x - target.x) <= 53 * size)
-        assert(Math.abs(arrived.y - target.y) <= 38 * size)
+        const arrived = runnerPose(3750, index, count, start, target, size)
+        assert(Math.abs(arrived.x - target.x) <= (26 * (count - 1) + 1) * size)
+        assert(Math.abs(arrived.y - target.y) <= (18 + (count - 1) * 4.5 + 1) * size)
         assert.equal(runnerPose(GATHER_DURATION, index, count, start, target, size).opacity, 0)
         for (let time = 0; time <= GATHER_DURATION; time += 25) {
           const pose = runnerPose(time, index, count, start, target, size)
@@ -141,6 +151,44 @@ test('entrance runners remain anchored and gather correctly across phone and tab
       }
     }
   }
+})
+
+test('houses establish first and fade only while their own contestants emerge', () => {
+  for (let index = 0; index < 5; index++) {
+    assert.deepEqual(contestantReveal(800, index), { pop: 0, houseOpacity: 1, houseScale: 1 })
+    let previousOpacity = 1
+    for (let time = 0; time <= 2200; time += 10) {
+      const reveal = contestantReveal(time, index)
+      const runner = runnerPose(time, index, 5, { x: 100, y: 200 }, { x: 195, y: 430 })
+      if (!reveal.pop) {
+        assert.equal(reveal.houseOpacity, 1)
+        assert.equal(runner.opacity, 0)
+      } else {
+        assert(runner.opacity > 0 && runner.scale > 0)
+        assert(reveal.houseOpacity < 1)
+      }
+      if (reveal.houseOpacity === 0) assert.equal(reveal.pop, 1)
+      assert(reveal.houseOpacity <= previousOpacity)
+      assert(reveal.houseScale >= .78 && reveal.houseScale <= 1)
+      previousOpacity = reveal.houseOpacity
+    }
+    assert.equal(previousOpacity, 0)
+  }
+})
+
+test('the venue appears late and stays at its normal size; the stage handoff waits for every contestant', () => {
+  for (const time of [0, 600, 2200, 3000]) assert.equal(venuePose(time).opacity, 0)
+  assert(venuePose(3250).opacity > 0)
+  for (let time = 3500; time <= GATHER_DURATION; time += 10) {
+    assert.deepEqual(venuePose(time), { opacity: 1, scale: 1 })
+  }
+  for (const count of [2, 3, 4, 5]) {
+    for (let index = 0; index < count; index++) {
+      const start = { x: 100, y: 200 }, target = { x: 195, y: 430 }
+      assert.equal(runnerPose(STAGE_HANDOFF_START, index, count, start, target).opacity, 0)
+    }
+  }
+  assert(GATHER_DURATION > STAGE_HANDOFF_START)
 })
 
 test('cloth covers the center when closed and compresses to the wings on phone and tablet widths', () => {
@@ -187,8 +235,8 @@ test('hard requirements exclude missing facts while soft preferences keep altern
   assert.equal(parsed.quiet, true)
 })
 
-test('two- and three-contestant discussions have complete, correctly associated evidence', () => {
-  for (const count of [2, 3]) {
+test('each cast size has complete discussion rounds and correctly associated evidence', () => {
+  for (const count of [2, 3, 4, 5]) {
     const messages = createDebate(restaurants.slice(0, count), defaultFilters())
     assert.equal(messages.length, count * 3)
     for (const message of messages) {
@@ -199,13 +247,13 @@ test('two- and three-contestant discussions have complete, correctly associated 
   assert(evidence.filter((e) => e.kind === 'review').every((e) => e.mock))
 })
 
-test('interventions preserve history and recommendations obey the latest hard requirements', async () => {
+test('interventions preserve history and explicit choices obey the latest hard requirements', async () => {
   storage.clear()
   setActivePinia(createPinia())
   const store = useDiningStore()
   store.understand('两个人约会，人均200以内')
-  store.prepareSelection()
-  assert.equal(store.selected.length, 3)
+  inviteRestaurants(store, 5)
+  assert.equal(store.selected.length, 5)
   store.startDebate()
   store.recordCurrent()
   const previousStatement = store.history[0].text
@@ -213,15 +261,289 @@ test('interventions preserve history and recommendations obey the latest hard re
   assert.equal(store.history[0].text, previousStatement)
   assert.equal(store.filters.maxBudget, 150)
   assert.equal(store.filters.noSpice, true)
-  const winner = store.decide()
+  const choice = store.decisionCandidates[0]
+  assert(choice)
+  const winner = store.decide(choice.id)
   assert(winner)
   assert(matchesFilters(winner, store.filters))
   store.filters.maxBudget = 1
-  assert.equal(store.decide(), undefined)
+  assert.equal(store.decide(choice.id), undefined)
   assert.equal(store.winner, undefined)
   await nextTick()
   setActivePinia(createPinia())
   const restored = useDiningStore()
   assert.equal(restored.filters.maxBudget, 1)
   assert(restored.history.some((entry) => entry.user))
+})
+
+test('restaurant order stays stable and only an explicit choice creates a persistent result', async () => {
+  storage.clear()
+  setActivePinia(createPinia())
+  const store = useDiningStore()
+  store.understand('今晚和朋友吃饭')
+  const originalOrder = store.candidates.map((restaurant) => restaurant.id)
+  assert.deepEqual(originalOrder, restaurants.filter((restaurant) => matchesFilters(restaurant, store.filters)).map((restaurant) => restaurant.id))
+  store.filters.quiet = true
+  store.filters.mild = true
+  store.filters.scene = '约会'
+  assert.deepEqual(store.candidates.map((restaurant) => restaurant.id), originalOrder)
+  inviteRestaurants(store, 5)
+  assert.equal(store.winner, undefined)
+  assert.equal(store.decide(), undefined)
+  assert.equal(store.decide('missing-restaurant'), undefined)
+  const outside = restaurants.find((restaurant) => !store.selectedIds.includes(restaurant.id))
+  assert.equal(store.decide(outside.id), undefined)
+  assert.equal(store.winnerId, '')
+
+  const chosen = store.decisionCandidates.at(-1)
+  assert.notEqual(chosen.id, store.decisionCandidates[0].id)
+  assert.equal(store.decide(chosen.id).id, chosen.id)
+  assert.equal(store.winner.id, chosen.id)
+  assert.equal(store.decide('missing-restaurant'), undefined)
+  assert.equal(store.winner.id, chosen.id)
+  store.filters.quiet = false
+  store.filters.scene = '家庭聚会'
+  assert.equal(store.winner.id, chosen.id)
+
+  await nextTick()
+  setActivePinia(createPinia())
+  const restored = useDiningStore()
+  assert.equal(restored.winnerId, chosen.id)
+  assert.equal(restored.winner.id, chosen.id)
+  restored.removeSelection(chosen.id)
+  assert(restored.decisionCandidates.length > 0)
+  assert.equal(restored.winner, undefined)
+})
+
+test('casts have balanced permanent seats and stay inside phone and tablet stages', () => {
+  for (const count of [2, 3, 4, 5]) {
+    const seats = stageSlots(count)
+    assert.equal(seats.length, count)
+    assert.equal(new Set(seats.map((seat) => seat.offset)).size, count)
+    assert.equal(new Set(seats.map((seat) => seat.scale)).size, 1)
+    for (const [index, seat] of seats.entries()) {
+      assert(Math.abs(seat.offset + seats[count - 1 - index].offset) < 1e-10)
+      for (const [width, height] of [[320, 568], [390, 844], [768, 1024], [1024, 768], [1366, 1024]]) {
+        const actorHeight = Math.max(135, Math.min(width * .48, height * .27, 350))
+        const actorWidth = actorHeight * 140 / 207 * seat.scale
+        const center = width / 2 + Math.min(width * .33, 290) * seat.offset
+        assert(center - actorWidth / 2 > 8)
+        assert(center + actorWidth / 2 < width - 8)
+      }
+    }
+  }
+})
+
+test('live expression, gesture and gaze changes preserve the current pose even when interrupted', () => {
+  const actor = new RIG.Actor({}, { seed: 1 })
+  actor.e(1, 'pitch').p(1, 'present', .65).look(1, .65, 0)
+  const before = actor.state(1.12)
+  actor.e(1.12, 'listen').p(1.12, 'rest', .65).look(1.12, -.65, 0)
+  const after = actor.state(1.12)
+  for (const key of ['brow', 'bot', 'lid', 'look', 'tilt', 'sy', 'lean', 'hy']) {
+    assert.deepEqual(after[key], before[key], `${key} must not jump during a handoff`)
+  }
+  for (let side = 0; side < 2; side++) {
+    for (const joint of [0, 1, 3]) assert(Math.abs(after.arms[side][joint] - before.arms[side][joint]) < 1e-8)
+    assert.equal(after.arms[side][2], before.arms[side][2])
+  }
+  const settled = actor.state(2)
+  assert.equal(settled.look.x, -.65)
+  assert.deepEqual(settled.arms.map((arm) => arm.slice(0, 3)), [[12, -8, 'open'], [12, -8, 'open']])
+  assert.equal(settled.tilt, 4)
+  actor.e(2, 'think')
+  const thinking = actor.state(2.2)
+  actor.e(2.2, 'pitch').look(2.2, 0, 0)
+  assert.deepEqual(actor.state(2.2).look, thinking.look)
+  assert.equal(actor.state(3).look.x, 0)
+})
+
+test('the entrance run decelerates into the listening pose without a final limb jump', () => {
+  const actor = new RIG.Actor({}, { seed: 3 })
+  actor.p(0, 'run').run(0, Infinity, 3.1)
+  const before = actor.state(1.1)
+  actor.p(1.1, 'rest', .65).stopRun(1.1)
+  assert.deepEqual(actor.state(1.1), before)
+  const landing = actor.state(1.34 - 1e-6)
+  const landed = actor.state(1.34 + 1e-6)
+  for (const key of ['by', 'legL', 'legR', 'lean']) assert(Math.abs(landing[key] - landed[key]) < .001)
+  for (let side = 0; side < 2; side++) {
+    for (const joint of [0, 1]) assert(Math.abs(landing.arms[side][joint] - landed.arms[side][joint]) < .001)
+  }
+  assert.deepEqual(actor.state(2).arms.map((arm) => arm.slice(0, 3)), [[12, -8, 'open'], [12, -8, 'open']])
+})
+
+test('swipes only invite explicit likes, undo the last card and restore the deck after a reload', async () => {
+  storage.clear()
+  setActivePinia(createPinia())
+  let store = useDiningStore()
+  store.understand('两个人约会，人均200以内')
+  store.reconcileSelection()
+  assert.equal(store.selected.length, 0)
+  const skipped = store.swipeCandidates[0].id
+  assert.equal(store.swipeRestaurant('not-a-restaurant', true), false)
+  assert.equal(store.swipeRestaurant(store.swipeCandidates[1].id, true), false)
+  assert(store.swipeRestaurant(skipped, false))
+  assert.equal(store.selected.length, 0)
+  assert.equal(store.swipeRestaurant(skipped, true), false)
+  inviteRestaurants(store, 2)
+  assert.equal(store.canStartDebate, true)
+  const lastLiked = store.selectedIds.at(-1)
+  store.undoSwipe()
+  assert.equal(store.canStartDebate, false)
+  assert.equal(store.swipeCandidates[0].id, lastLiked)
+  assert(store.swipeRestaurant(lastLiked, true))
+  const original = [...store.selectedIds]
+  const pending = store.swipeCandidates.map((restaurant) => restaurant.id)
+  const choices = JSON.parse(JSON.stringify(store.swipeHistory))
+  await nextTick()
+  setActivePinia(createPinia())
+  store = useDiningStore()
+  assert.deepEqual(store.selectedIds, original)
+  assert.deepEqual(store.swipeHistory, choices)
+  assert.deepEqual(store.swipeCandidates.map((restaurant) => restaurant.id), pending)
+  store.undoSwipe()
+  assert.equal(store.swipeCandidates[0].id, lastLiked)
+  assert(store.swipeRestaurant(lastLiked, true))
+  inviteRestaurants(store, 3)
+  const fullCast = [...store.selectedIds]
+  const next = store.swipeCandidates[0].id
+  assert.equal(store.swipeRestaurant(next, true), false)
+  assert.deepEqual(store.selectedIds, fullCast)
+  store.removeSelection(original[0])
+  assert(store.swipeRestaurant(next, true))
+  assert.equal(store.selected.length, 5)
+  assert(store.selectedIds.includes(next))
+  assert.equal(store.selectedIds.includes(skipped), false)
+})
+
+test('condition edits reconcile invitations without silent replacements and all skips can be retried', () => {
+  storage.clear()
+  setActivePinia(createPinia())
+  const store = useDiningStore()
+  store.understand('今晚和朋友吃点好的')
+  const first = store.swipeCandidates[0].id
+  while (store.swipeCandidates.length) assert(store.swipeRestaurant(store.swipeCandidates[0].id, false))
+  assert.equal(store.selected.length, 0)
+  assert.equal(store.startDebate(), false)
+  store.undoSwipe()
+  assert.equal(store.swipeCandidates.length, 1)
+  store.resetSwipes()
+  assert.equal(store.swipeCandidates[0].id, first)
+  inviteRestaurants(store, 3)
+  const original = [...store.selectedIds]
+  store.filters.maxBudget = 1
+  assert.equal(store.swipeHistory.length, 0)
+  assert.deepEqual(store.selectedIds, original)
+  assert.equal(store.startDebate(), false)
+  store.reconcileSelection()
+  assert.equal(store.selected.length, 0)
+  assert.equal(store.swipeCandidates.length, 0)
+  store.filters.maxBudget = 200
+  store.filters.noSpice = true
+  store.filters.allergy = '花生'
+  store.reconcileSelection()
+  assert.equal(store.selected.length, 0)
+  assert(store.swipeCandidates.every((restaurant) => matchesFilters(restaurant, store.filters)))
+  store.begin()
+  assert.equal(store.swipeHistory.length, 0)
+  assert.equal(store.selected.length, 0)
+})
+
+test('only a valid cast can open the theater', () => {
+  storage.clear()
+  setActivePinia(createPinia())
+  const store = useDiningStore()
+  store.understand('两个人约会，人均200以内')
+  store.selectedIds = [store.candidates[0].id]
+  assert.equal(store.canStartDebate, false)
+  assert.equal(store.startDebate(), false)
+  for (const count of [2, 3, 4, 5]) {
+    store.selectedIds = store.candidates.slice(0, count).map((r) => r.id)
+    assert.equal(store.canStartDebate, true)
+    assert.equal(store.startDebate(), true)
+    assert.equal(store.messages.length, count * 3)
+  }
+  store.selectedIds = store.candidates.slice(0, 6).map((r) => r.id)
+  assert.equal(store.canStartDebate, false)
+  assert.equal(store.startDebate(), false)
+})
+
+test('swipe gestures distinguish deliberate choices from taps, small drags and vertical scrolling', () => {
+  for (const width of [280, 350, 500]) {
+    const gesture = { x: 0, y: 0, elapsed: 500, width }
+    assert.equal(swipeDirection(gesture), 0)
+    assert.equal(swipeDirection({ ...gesture, x: 30, y: 2 }), 0)
+    assert.equal(swipeDirection({ ...gesture, x: 160, y: 180 }), 0)
+    assert.equal(swipeDirection({ ...gesture, x: 140, y: 12 }), 1)
+    assert.equal(swipeDirection({ ...gesture, x: -140, y: 12 }), -1)
+    assert.equal(swipeDirection({ ...gesture, x: 40, elapsed: 60 }), 1)
+    assert.equal(swipeDirection({ ...gesture, x: -40, elapsed: 60 }), -1)
+    assert.equal(swipeDirection({ ...gesture, x: 40, elapsed: 0 }), 0)
+  }
+})
+
+test('reserve card appears during the swipe and every survivor keeps its pose when the front card is removed', () => {
+  assert.equal(cardStackPose(VISIBLE_STACK_CARDS, 0).opacity, 0)
+  for (const progress of [.25, .5, .75]) {
+    const reserve = cardStackPose(VISIBLE_STACK_CARDS, progress)
+    assert(reserve.opacity > 0 && reserve.opacity < 1)
+    assert(reserve.y > cardStackPose(VISIBLE_STACK_CARDS - 1, 0).y)
+  }
+  for (let index = 1; index <= VISIBLE_STACK_CARDS; index++) {
+    const beforeCommit = cardStackPose(index, 1)
+    const afterCommit = cardStackPose(index - 1, 0)
+    assert.deepEqual(beforeCommit, afterCommit, `card ${index} must not jump when its slot changes`)
+  }
+  const gutter = 24 + 12
+  for (const height of [180, 220, 370, 500, 800]) {
+    for (let step = 0; step <= 100; step++) {
+      const pose = cardStackPose(VISIBLE_STACK_CARDS, step / 100)
+      const bottomExtension = pose.y - height * .18 * (1 - pose.scale)
+      assert(bottomExtension < gutter, 'revealing the reserve must keep it above the map')
+    }
+  }
+})
+
+test('picker arrival docks the same orb at the measured phone or tablet anchor before revealing the deck', () => {
+  for (const [from, to] of [
+    [{ left: 108, top: 300, size: 159 }, { left: 28, top: 91, size: 52 }],
+    [{ left: 274, top: 360, size: 220 }, { left: 142, top: 112, size: 68 }],
+  ]) {
+    assert.deepEqual(orbAnchorFrame(from, to, 0), from)
+    assert.deepEqual(orbAnchorFrame(from, to, 1), to)
+    let previous = from
+    for (let elapsed = 0; elapsed <= PICKER_ARRIVAL_DURATION; elapsed += 10) {
+      const progress = pickerArrivalProgress(elapsed)
+      const box = orbAnchorFrame(from, to, progress.orb)
+      assert(box.top <= previous.top && box.size <= previous.size)
+      assert(box.left >= to.left && box.top >= to.top && box.size >= to.size)
+      for (const value of Object.values(progress)) assert(value >= 0 && value <= 1)
+      if (progress.cards > 0) assert(progress.title > .9)
+      if (progress.map > 0) assert.equal(progress.orb, 1)
+      previous = box
+    }
+  }
+  assert(Object.values(pickerArrivalProgress(PICKER_ARRIVAL_DURATION)).every((value) => value === 1))
+})
+
+test('picker arrival resets transient motion on cancellation and direct visits stay fully visible', () => {
+  setActivePinia(createPinia())
+  const arrival = usePickerArrivalStore()
+  assert.equal(arrival.active, false)
+  assert(Object.values(arrival.progress).every((value) => value === 1))
+  assert.equal(arrival.begin(), true)
+  assert.equal(arrival.begin(), false)
+  assert.equal(arrival.phase, 'departing')
+  assert.equal(arrival.progress.cards, 0)
+  arrival.arrive()
+  arrival.elapsed = 800
+  assert(arrival.progress.title > 0)
+  assert.equal(arrival.progress.cards, 0)
+  arrival.finish()
+  assert.equal(arrival.active, false)
+  assert.equal(arrival.elapsed, 0)
+  assert(Object.values(arrival.progress).every((value) => value === 1))
+  assert.equal(arrival.begin(), true)
+  arrival.finish()
 })

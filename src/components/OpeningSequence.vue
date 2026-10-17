@@ -42,7 +42,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CharacterAvatar from './CharacterAvatar.vue'
 import { useEntranceStore } from '@/stores/entrance'
-import { GATHER_DURATION, STAGE_DURATION, OPENING_PLAYBACK_RATE, clamp, easeInOut, easeOutBack, runnerPose, segment } from '@/lib/entranceMotion'
+import { GATHER_DURATION, STAGE_DURATION, STAGE_HANDOFF_START, OPENING_PLAYBACK_RATE, clamp, easeInOut, runnerPose, segment, venuePose } from '@/lib/entranceMotion'
 
 const emit = defineEmits<{ covered: [] }>()
 const entrance = useEntranceStore()
@@ -61,7 +61,7 @@ let quick = false
 function setRunner(el: unknown, index: number) { if (el instanceof HTMLElement) runners[index] = el }
 function setDust(el: unknown, index: number) { if (el instanceof HTMLElement) dust.set(index, el) }
 
-// The fully opaque iris hides the route replacement, including lazy component loading.
+// The original opaque iris hides route replacement and lazy loading.
 function coverMap() {
   if (entrance.phase !== 'map') return
   if (veil.value) { veil.value.style.clipPath = 'none'; veil.value.style.opacity = '1' }
@@ -98,7 +98,7 @@ function renderGathering(time: number) {
   for (const particle of particles) {
     const el = dust.get(particle.key)
     if (!el) continue
-    const emitted = 1390 + particle.actor * 110 + particle.n * 135
+    const emitted = 1690 + particle.actor * 110 + particle.n * 135
     const age = (time - emitted) / 500
     if (age < 0 || age > 1) { el.style.opacity = '0'; continue }
     const anchor = anchors.starts[particle.actor] || anchors.target
@@ -107,17 +107,18 @@ function renderGathering(time: number) {
     el.style.opacity = String((1 - age) * .5)
   }
 
+  const venue = venuePose(time)
   if (meeting.value) meeting.value.style.transform = `translate(${target.x}px, ${target.y}px)`
   if (tent.value) {
-    const appear = easeOutBack(segment(time, 3000, 3500))
-    tent.value.style.transform = `translate(-50%, -85%) scale(${appear})`
-    tent.value.style.opacity = String(clamp(appear))
+    tent.value.style.transform = `translate(-50%, -85%) scale(${venue.scale})`
+    tent.value.style.opacity = String(venue.opacity)
   }
   if (time >= 3300 && !focused) { focused = true; scene.focusTarget() }
 
-  const radius = Math.hypot(rect.width, rect.height) * 1.15 * easeInOut(segment(time, 3890, GATHER_DURATION))
   if (veil.value) {
-    veil.value.style.opacity = time >= 3890 ? '1' : '0'
+    const handoff = easeInOut(segment(time, STAGE_HANDOFF_START, GATHER_DURATION))
+    const radius = Math.hypot(rect.width, rect.height) * 1.15 * handoff
+    veil.value.style.opacity = handoff > 0 ? '1' : '0'
     veil.value.style.clipPath = `circle(${radius}px at ${target.x}px ${target.y}px)`
   }
 }
@@ -132,7 +133,6 @@ function tick(now: number) {
     if (entrance.elapsed >= GATHER_DURATION || reducedMotion.matches) coverMap()
   } else if (entrance.phase === 'stage') {
     if (veil.value) {
-      veil.value.style.clipPath = 'none'
       veil.value.style.opacity = String(1 - segment(entrance.elapsed, 0, 360))
     }
     if (entrance.elapsed >= STAGE_DURATION || quick || reducedMotion.matches) { entrance.finish(); return }
@@ -226,11 +226,13 @@ onBeforeUnmount(() => {
 
     svg {
       position: absolute;
+      top: 0;
+      left: 0;
       width: calc(90px * var(--runner-scale, 1));
       height: calc(99px * var(--runner-scale, 1));
       opacity: 0;
       transform-origin: 50% 85%;
-      filter: drop-shadow(0 4px 3px #2b1b301a);
+      will-change: transform, opacity;
     }
 
     >span {
@@ -245,7 +247,7 @@ onBeforeUnmount(() => {
       border: 2px solid var(--paper);
       border-radius: 50%;
       color: var(--paper);
-      font-size: 12px;
+      font-size: var(--small-size);
     }
   }
 

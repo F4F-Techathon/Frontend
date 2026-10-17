@@ -8,7 +8,7 @@ export function distanceKm(a: Coordinates, b: Coordinates) {
   return 6371 * 2 * Math.asin(Math.sqrt(Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLng / 2) ** 2))
 }
 
-// Hard limits exclude unknown values; preferences only influence the ordering.
+// Apply explicit limits while keeping the restaurant order stable.
 export function matchesFilters(r: Restaurant, f: Filters) {
   if ((f.maxBudget || f.minBudget) && r.price === null) return false
   if (f.maxBudget && r.price! > f.maxBudget) return false
@@ -18,16 +18,6 @@ export function matchesFilters(r: Restaurant, f: Filters) {
   if (f.noSpice && r.spice !== 0) return false
   if (f.allergy && (!r.allergens || r.allergens.includes(f.allergy))) return false
   return true
-}
-
-// Scores only attributes actually present in the merchant data.
-export function preferenceScore(r: Restaurant, f: Filters) {
-  let score = 0
-  if (f.scene && r.scenes.includes(f.scene)) score += 5
-  if (f.quiet && r.quiet === true) score += 4
-  if (f.mild && r.spice === 0) score += 3
-  if (r.price !== null) score += 1
-  return score - distanceKm(f.center, r.coordinates) * 0.1
 }
 
 // Extracts explicit requirements locally until a real agent service is connected.

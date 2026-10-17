@@ -31,7 +31,7 @@ export function loadAMap(): Promise<AMapSDK> {
   if (window.AMap) return Promise.resolve(window.AMap)
   if (pending) return pending
   const key = import.meta.env.VITE_AMAP_KEY
-  if (!key) return Promise.reject(new Error('地图暂未配置，可以使用下方列表挑选餐厅。'))
+  if (!key) return Promise.reject(new Error('地图暂未配置，可以先用滑卡挑选饭店。'))
   pending = new Promise<AMapSDK>((resolve, reject) => {
     const script = document.createElement('script')
     const timer = setTimeout(() => fail('地图加载较慢，请检查网络后重试。'), 18000)
@@ -40,7 +40,7 @@ export function loadAMap(): Promise<AMapSDK> {
     window.__tonightAmapReady = () => { clearTimeout(timer); delete window.__tonightAmapReady; if (window.AMap) resolve(window.AMap); else fail('地图暂时不可用，请重试。') }
     script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}&plugin=AMap.PlaceSearch,AMap.Geolocation&callback=__tonightAmapReady`
     script.async = true
-    script.onerror = () => fail('地图加载失败，你可以先使用候选列表。')
+    script.onerror = () => fail('地图加载失败，仍可继续滑卡挑选饭店。')
     document.head.appendChild(script)
   })
   return pending

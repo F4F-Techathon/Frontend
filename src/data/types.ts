@@ -21,11 +21,11 @@ export interface Restaurant {
   character: CharacterId
   host: string
   color: string
+  cover: { src: string; alt: string; position?: string }
   price: number | null
   coordinates: Coordinates
   address: string
   hours: string | null
-  rating: number | null
   tags: string[]
   scenes: string[]
   quiet: boolean | null
